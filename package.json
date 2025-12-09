@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Backend API for Medi-Mart pharmacy platform",
   "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"
@@ -22,7 +25,7 @@
     "express-async-errors": "^3.1.1",
     "firebase-admin": "^11.0.0",
     "mongodb": "^7.0.0",
-    "mongoose": "^9.0.1",
+    "mongoose": "^7.6.3",
     "multer": "^2.0.2"
   },
   "devDependencies": {

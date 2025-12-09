@@ -10,6 +10,10 @@ const path = require('path');
  */
 async function uploadImage(fileBuffer, fileName, bucket = 'images') {
   try {
+    if (!supabase) {
+      throw new Error('Supabase is not configured. Please set SUPABASE_URL and SUPABASE_API_KEY in .env');
+    }
+
     // Generate unique filename to avoid conflicts
     const timestamp = Date.now();
     const ext = path.extname(fileName);
@@ -47,6 +51,11 @@ async function uploadImage(fileBuffer, fileName, bucket = 'images') {
  */
 async function deleteImage(imageUrl, bucket = 'images') {
   try {
+    if (!supabase) {
+      console.warn('Supabase is not configured. Cannot delete image.');
+      return false;
+    }
+
     // Extract filename from URL
     const fileName = imageUrl.split('/').pop();
 

@@ -3,10 +3,12 @@ const { createClient } = require('@supabase/supabase-js');
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_API_KEY;
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error('Missing Supabase configuration. Please set SUPABASE_URL and SUPABASE_API_KEY in .env');
-}
+let supabase = null;
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+if (!supabaseUrl || !supabaseKey) {
+  console.warn('⚠️  Missing Supabase configuration. Image uploads will not work. Please set SUPABASE_URL and SUPABASE_API_KEY in .env');
+} else {
+  supabase = createClient(supabaseUrl, supabaseKey);
+}
 
 module.exports = supabase;
