@@ -21,12 +21,27 @@ npm install
 2. Update MongoDB URI if needed
 3. Update FRONTEND_URL for CORS
 
+### Local Development
 ```env
 PORT=5000
 MONGODB_URI=mongodb://localhost:27017/medi-mart
 NODE_ENV=development
 FRONTEND_URL=http://localhost:5173
 ```
+
+### Production (Render)
+```env
+PORT=10000
+MONGODB_URI=your-mongodb-atlas-connection-string
+NODE_ENV=production
+FRONTEND_URL=https://ashilafarmaci.netlify.app
+```
+
+**Important:** 
+- Render automatically provides HTTPS for your backend (e.g., `https://your-service.onrender.com`)
+- Your backend URL will be HTTPS by default on Render
+- Make sure your frontend uses the HTTPS backend URL in production
+- CORS is configured to allow `https://ashilafarmaci.netlify.app`
 
 ## Run Server
 

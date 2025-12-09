@@ -7,12 +7,44 @@ const cors = require('cors');
 const app = express();
 
 // Middleware
+// Enhanced CORS for mobile and multiple origins
+const allowedOrigins = process.env.FRONTEND_URL 
+  ? process.env.FRONTEND_URL.split(',').map(url => url.trim().replace(/\/$/, '')) // Remove trailing slashes
+  : [
+      'http://localhost:5173', 
+      'http://localhost:3000',
+      'https://ashilafarmaci.netlify.app' // Production Netlify domain
+    ];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  credentials: true
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Remove trailing slash from origin for comparison
+    const originWithoutSlash = origin.replace(/\/$/, '');
+    
+    if (allowedOrigins.indexOf(originWithoutSlash) !== -1) {
+      callback(null, true);
+    } else if (process.env.NODE_ENV === 'development') {
+      // Allow all origins in development
+      callback(null, true);
+    } else {
+      // In production, only allow whitelisted origins
+      console.warn(`⚠️  CORS: Blocked request from origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 86400 // 24 hours
 }));
-app.use(express.json());
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Body parsing with mobile-friendly limits
+app.use(express.json({ limit: '10mb' })); // Reduced from 50mb for mobile
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Connect to MongoDB
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -80,7 +112,17 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`\n✓ Server running on http://localhost:${PORT}`);
-  console.log(`✓ API Base URL: http://localhost:${PORT}`);
-  console.log(`✓ CORS enabled for: ${process.env.FRONTEND_URL || 'http://localhost:5173'}\n`);
+  const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+  const host = process.env.NODE_ENV === 'production' 
+    ? process.env.RENDER_EXTERNAL_URL || `https://your-service.onrender.com`
+    : `localhost:${PORT}`;
+  
+  console.log(`\n✓ Server running on ${protocol}://${host}`);
+  console.log(`✓ API Base URL: ${protocol}://${host}`);
+  console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`✓ CORS enabled for:`);
+  allowedOrigins.forEach(origin => {
+    console.log(`   - ${origin}`);
+  });
+  console.log('');
 });
