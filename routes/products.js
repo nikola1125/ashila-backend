@@ -1,22 +1,7 @@
 const express = require('express');
-const multer = require('multer');
 const Product = require('../models/Product');
-const { uploadImage, deleteImage } = require('../utils/uploadImage');
+const { requireAuth, requireRole } = require('../middleware/auth');
 const router = express.Router();
-
-// Configure multer for memory storage
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req, file, cb) => {
-    // Only allow image files
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'));
-    }
-  }
-});
 
 // Get all products
 router.get('/', async (req, res) => {
@@ -70,17 +55,6 @@ router.get('/top-discount', async (req, res) => {
   }
 });
 
-// Get product by id
-router.get('/:id', async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id).populate('category');
-    if (!product) return res.status(404).json({ message: 'Product not found' });
-    res.json(product);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
 // Get products by seller (query parameter)
 router.get('/seller', async (req, res) => {
   try {
@@ -109,16 +83,16 @@ router.get('/seller/:email', async (req, res) => {
 router.get('/bestsellers/:category', async (req, res) => {
   try {
     const { category } = req.params;
-    const filter = { 
+    const filter = {
       isBestseller: true,
-      bestsellerCategory: category 
+      bestsellerCategory: category
     };
     // isActive defaults to true, so we don't need to filter by it
     const products = await Product.find(filter)
       .populate('category')
       .sort({ createdAt: -1 })
       .limit(20);
-    
+
     // Return as array (frontend checks for array first, then result property)
     res.json(products);
   } catch (err) {
@@ -127,19 +101,22 @@ router.get('/bestsellers/:category', async (req, res) => {
   }
 });
 
-// Create product (seller) with image upload
-router.post('/', upload.single('image'), async (req, res) => {
+// Get product by id (must be after /seller routes)
+router.get('/:id', async (req, res) => {
   try {
-    let imageUrl = req.body.image; // Use provided URL if no file
+    const product = await Product.findById(req.params.id).populate('category');
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+    res.json(product);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
-    // If image file was uploaded, upload to Supabase
-    if (req.file) {
-      try {
-        imageUrl = await uploadImage(req.file.buffer, req.file.originalname);
-      } catch (uploadErr) {
-        return res.status(400).json({ message: `Image upload failed: ${uploadErr.message}` });
-      }
-    }
+// Create product (seller/admin) with R2 metadata
+router.post('/', requireAuth, requireRole(['seller', 'admin']), async (req, res) => {
+  try {
+    const imageUrl = req.body.imageUrl || req.body.image || null;
+    const imageId = req.body.imageId || null;
 
     const product = new Product({
       itemName: req.body.itemName,
@@ -149,6 +126,8 @@ router.post('/', upload.single('image'), async (req, res) => {
       price: req.body.price,
       discount: req.body.discount || 0,
       image: imageUrl,
+      imageUrl: imageUrl,
+      imageId: imageId,
       description: req.body.description,
       stock: req.body.stock,
       sellerEmail: req.body.seller,
@@ -163,26 +142,14 @@ router.post('/', upload.single('image'), async (req, res) => {
   }
 });
 
-// Update product with optional image upload
-router.patch('/:id', upload.single('image'), async (req, res) => {
+// Update product (seller/admin) with optional R2 metadata update
+router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    // If new image file is uploaded, replace old image
-    if (req.file) {
-      try {
-        // Delete old image from Supabase if it exists
-        if (product.image && product.image.includes('supabase')) {
-          await deleteImage(product.image);
-        }
-
-        // Upload new image
-        const newImageUrl = await uploadImage(req.file.buffer, req.file.originalname);
-        req.body.image = newImageUrl;
-      } catch (uploadErr) {
-        return res.status(400).json({ message: `Image upload failed: ${uploadErr.message}` });
-      }
+    if (req.body.imageUrl) {
+      req.body.image = req.body.imageUrl;
     }
 
     Object.assign(product, req.body);
@@ -195,15 +162,10 @@ router.patch('/:id', upload.single('image'), async (req, res) => {
 });
 
 // Delete product
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, requireRole(['seller', 'admin']), async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
-
-    // Delete image from Supabase if it exists
-    if (product.image && product.image.includes('supabase')) {
-      await deleteImage(product.image);
-    }
 
     res.json({ message: 'Product deleted' });
   } catch (err) {

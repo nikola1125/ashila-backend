@@ -88,6 +88,9 @@ app.use('/users', require('./routes/users'));
 app.use('/categories', require('./routes/categories'));
 app.use('/medicines', require('./routes/products'));
 app.use('/products', require('./routes/products'));
+app.use('/uploads', require('./routes/uploads'));
+app.use('/inventory', require('./routes/inventory'));
+app.use('/admin/auth', require('./routes/adminAuth'));
 app.use('/orders', require('./routes/orders'));
 app.use('/reviews', require('./routes/reviews'));
 
