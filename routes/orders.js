@@ -52,16 +52,33 @@ router.get('/admin-dashboard', requireAuth, requireRole(['admin']), async (req, 
   try {
     const totalOrders = await Order.countDocuments();
     const totalUsers = await User.countDocuments();
-    const totalRevenueAgg = await Order.aggregate([
-      { $group: { _id: null, total: { $sum: '$finalPrice' } } }
+    const sumsAgg = await Order.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: '$finalPrice' },
+          totalPaid: {
+            $sum: {
+              $cond: [{ $eq: ['$paymentStatus', 'paid'] }, '$finalPrice', 0],
+            },
+          },
+          totalPending: {
+            $sum: {
+              $cond: [{ $eq: ['$paymentStatus', 'unpaid'] }, '$finalPrice', 0],
+            },
+          },
+        },
+      },
     ]);
+
+    const sums = sumsAgg[0] || { totalAmount: 0, totalPaid: 0, totalPending: 0 };
 
     res.json({
       totalOrders,
       totalUsers,
-      totalAmount: totalRevenueAgg[0]?.total || 0,
-      totalPaid: 0,
-      totalPending: 0,
+      totalAmount: sums.totalAmount || 0,
+      totalPaid: sums.totalPaid || 0,
+      totalPending: sums.totalPending || 0,
       pendingOrders: await Order.countDocuments({ status: 'pending' }),
     });
   } catch (err) {
@@ -102,8 +119,11 @@ router.post('/admin/confirm/:id', requireAuth, requireRole(['admin']), async (re
 
     // Decrement stock for each item
     for (const item of order.items || []) {
-      if (!item.productId) continue;
-      await Product.findByIdAndUpdate(item.productId, { $inc: { stock: -Number(item.quantity || 0) } });
+      const productId = item.productId || item.id || item._id;
+      if (!productId) {
+        continue;
+      }
+      await Product.findByIdAndUpdate(productId, { $inc: { stock: -Number(item.quantity || 0) } });
     }
 
     order.status = 'confirmed';
@@ -170,6 +190,11 @@ router.get('/order/:id', requireAuth, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id).populate('items.productId');
     if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    // Admin JWT sessions do not have an email; allow admin to access any order.
+    if (req.user?.admin === true) {
+      return res.json(order);
+    }
 
     const requesterEmail = req.user?.email;
     if (!requesterEmail) {

@@ -13,7 +13,7 @@ const safeEqual = (a, b) => {
 
 router.post('/login', async (req, res) => {
   try {
-    const { username, password } = req.body || {};
+    const { username, password, rememberMe } = req.body || {};
 
     const adminUsername = (process.env.ADMIN_USERNAME || '').trim();
     const adminPassword = (process.env.ADMIN_PASSWORD || '').trim();
@@ -34,13 +34,16 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    const remember = Boolean(rememberMe);
+    const expiresIn = remember ? '7d' : '12h';
+
     const token = jwt.sign(
       { typ: 'admin' },
       jwtSecret,
-      { expiresIn: '12h', issuer: 'medi-mart' }
+      { expiresIn, issuer: 'medi-mart' }
     );
 
-    return res.json({ token });
+    return res.json({ token, expiresIn });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to login' });
   }

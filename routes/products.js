@@ -118,11 +118,19 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), async (req, res)
     const imageUrl = req.body.imageUrl || req.body.image || null;
     const imageId = req.body.imageId || null;
 
+    const sellerEmail =
+      req.body.seller ||
+      req.body.sellerEmail ||
+      req.appUser?.email ||
+      req.user?.email ||
+      (req.user?.admin === true ? 'admin' : null);
+
     const product = new Product({
       itemName: req.body.itemName,
       genericName: req.body.genericName,
       company: req.body.company,
       categoryName: req.body.categoryName,
+      categoryPath: Array.isArray(req.body.categoryPath) ? req.body.categoryPath : undefined,
       price: req.body.price,
       discount: req.body.discount || 0,
       image: imageUrl,
@@ -130,7 +138,8 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), async (req, res)
       imageId: imageId,
       description: req.body.description,
       stock: req.body.stock,
-      sellerEmail: req.body.seller,
+      size: req.body.size,
+      sellerEmail: sellerEmail,
       dosage: req.body.dosage,
       manufacturer: req.body.manufacturer
     });
@@ -150,6 +159,10 @@ router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), async (req, 
 
     if (req.body.imageUrl) {
       req.body.image = req.body.imageUrl;
+    }
+
+    if (req.body.categoryPath !== undefined && !Array.isArray(req.body.categoryPath)) {
+      delete req.body.categoryPath;
     }
 
     Object.assign(product, req.body);

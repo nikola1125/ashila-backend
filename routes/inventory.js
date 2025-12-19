@@ -15,7 +15,7 @@ router.get('/', requireAuth, requireRole(['admin']), async (req, res) => {
     }
 
     const products = await Product.find(filter)
-      .select('itemName company categoryName stock price image imageUrl imageId updatedAt createdAt')
+      .select('itemName company categoryName categoryPath size stock price image imageUrl imageId updatedAt createdAt')
       .sort({ updatedAt: -1 });
 
     res.json({ result: products });
@@ -29,7 +29,7 @@ router.get('/low-stock', requireAuth, requireRole(['admin']), async (req, res) =
   try {
     const limit = Math.min(50, Math.max(1, Number(req.query.limit || 10)));
     const products = await Product.find({ stock: { $lte: 10 } })
-      .select('itemName company categoryName stock price image imageUrl imageId updatedAt createdAt')
+      .select('itemName company categoryName categoryPath size stock price image imageUrl imageId updatedAt createdAt')
       .sort({ updatedAt: -1 })
       .limit(limit);
 
@@ -51,7 +51,7 @@ router.patch('/:id', requireAuth, requireRole(['admin']), async (req, res) => {
       req.params.id,
       { stock: Number(stock), updatedAt: Date.now() },
       { new: true }
-    ).select('itemName company categoryName stock price image imageUrl imageId updatedAt createdAt');
+    ).select('itemName company categoryName categoryPath size stock price image imageUrl imageId updatedAt createdAt');
 
     if (!updated) {
       return res.status(404).json({ message: 'Product not found' });
