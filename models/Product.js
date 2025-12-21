@@ -13,6 +13,9 @@ const productSchema = new mongoose.Schema({
     required: true
   },
   categoryName: String,
+  subcategory: String, // e.g. "Tipi i lekures"
+  option: String,      // e.g. "Lekure normale"
+  size: String,        // e.g. "50ml", "100 tablets"
   price: {
     type: Number,
     required: true
@@ -26,7 +29,8 @@ const productSchema = new mongoose.Schema({
   stock: {
     type: Number,
     required: true,
-    default: 0
+    default: 0,
+    min: 0 // Prevent negative stock
   },
   seller: {
     type: mongoose.Schema.Types.ObjectId,
@@ -59,6 +63,15 @@ const productSchema = new mongoose.Schema({
     enum: ['skincare', 'hair', 'body', null],
     default: null
   },
+  variants: [{
+    size: String,
+    price: Number,
+    stock: Number,
+    discount: {
+      type: Number,
+      default: 0
+    }
+  }],
   createdAt: {
     type: Date,
     default: Date.now

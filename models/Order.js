@@ -37,8 +37,9 @@ const orderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'],
-    default: 'pending'
+    enum: ['Pending', 'Confirmed', 'Shipped', 'Completed', 'Cancelled'], // Capitalized to match UI if desired, or map it. Let's use Capitalized as per request implication or standard.
+    // actually user said: "Pending, Confirmed, Shipped, Completed".
+    default: 'Pending'
   },
   paymentStatus: {
     type: String,

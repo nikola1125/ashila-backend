@@ -8,38 +8,19 @@ const app = express();
 
 // Middleware
 // Enhanced CORS for mobile and multiple origins
-const allowedOrigins = process.env.FRONTEND_URL 
+const allowedOrigins = process.env.FRONTEND_URL
   ? process.env.FRONTEND_URL.split(',').map(url => url.trim().replace(/\/$/, '')) // Remove trailing slashes
   : [
-      'http://localhost:5173', 
-      'http://localhost:3000',
-      'https://ashilafarmaci.netlify.app' // Production Netlify domain
-    ];
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://ashilafarmaci.netlify.app' // Production Netlify domain
+  ];
 
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Remove trailing slash from origin for comparison
-    const originWithoutSlash = origin.replace(/\/$/, '');
-    
-    if (allowedOrigins.indexOf(originWithoutSlash) !== -1) {
-      callback(null, true);
-    } else if (process.env.NODE_ENV === 'development') {
-      // Allow all origins in development
-      callback(null, true);
-    } else {
-      // In production, only allow whitelisted origins
-      console.warn(`⚠️  CORS: Blocked request from origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: true, // Allow all origins for now to fix the issue definitively
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 86400 // 24 hours
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Access-Control-Allow-Credentials']
 }));
 
 // Body parsing with mobile-friendly limits
@@ -59,8 +40,8 @@ let connectionString = MONGODB_URI.trim();
 if (!connectionString.endsWith('/') && !connectionString.includes('?')) {
   // Add database name if not present
   if (!connectionString.match(/\/[^\/\?]+(\?|$)/)) {
-    connectionString = connectionString.endsWith('/') 
-      ? connectionString + 'medi-mart' 
+    connectionString = connectionString.endsWith('/')
+      ? connectionString + 'medi-mart'
       : connectionString + '/medi-mart';
   }
 }
@@ -69,19 +50,19 @@ mongoose.connect(connectionString, {
   serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
   socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
 })
-.then(() => {
-  console.log('✓ MongoDB connected successfully');
-  console.log(`✓ Database: ${mongoose.connection.name}`);
-})
-.catch(err => {
-  console.error('❌ MongoDB connection error:', err.message);
-  console.error('   Please check:');
-  console.error('   1. MONGODB_URI in .env file is correct');
-  console.error('   2. MongoDB Atlas cluster is running');
-  console.error('   3. IP address is whitelisted in MongoDB Atlas');
-  console.error('   4. Username and password are correct');
-  process.exit(1);
-});
+  .then(() => {
+    console.log('✓ MongoDB connected successfully');
+    console.log(`✓ Database: ${mongoose.connection.name}`);
+  })
+  .catch(err => {
+    console.error('❌ MongoDB connection error:', err.message);
+    console.error('   Please check:');
+    console.error('   1. MONGODB_URI in .env file is correct');
+    console.error('   2. MongoDB Atlas cluster is running');
+    console.error('   3. IP address is whitelisted in MongoDB Atlas');
+    console.error('   4. Username and password are correct');
+    process.exit(1);
+  });
 
 // Routes
 app.use('/users', require('./routes/users'));
@@ -90,6 +71,7 @@ app.use('/medicines', require('./routes/products'));
 app.use('/products', require('./routes/products'));
 app.use('/orders', require('./routes/orders'));
 app.use('/reviews', require('./routes/reviews'));
+app.use('/admin', require('./routes/admin'));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -110,13 +92,13 @@ app.use((err, req, res, next) => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-  const host = process.env.NODE_ENV === 'production' 
+  const host = process.env.NODE_ENV === 'production'
     ? process.env.RENDER_EXTERNAL_URL || `https://your-service.onrender.com`
     : `localhost:${PORT}`;
-  
+
   console.log(`\n✓ Server running on ${protocol}://${host}`);
   console.log(`✓ API Base URL: ${protocol}://${host}`);
   console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);

@@ -1,17 +1,38 @@
 const express = require('express');
-const Order = require('../models/Order');
-const Product = require('../models/Product');
 const router = express.Router();
+const Order = require('../models/Order');
+const User = require('../models/User'); // Assuming you have a User model
+
+// Get all orders (Admin)
+router.get('/', async (req, res) => {
+  try {
+    const orders = await Order.find().sort({ createdAt: -1 });
+    res.json(orders);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Get orders by email (Client)
+router.get('/:email', async (req, res) => {
+  try {
+    const email = req.params.email;
+    const orders = await Order.find({ buyerEmail: email }).sort({ createdAt: -1 });
+    res.json(orders);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 // Generate order number
 const generateOrderNumber = () => {
   return 'ORD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
 };
 
-// Create order
+// Create new order
 router.post('/', async (req, res) => {
   try {
-    const { items, buyerEmail, buyerName, deliveryAddress } = req.body;
+    const { items, buyerEmail, buyerName, deliveryAddress, status } = req.body;
 
     let totalPrice = 0;
     let discountAmount = 0;
@@ -35,10 +56,12 @@ router.post('/', async (req, res) => {
       discountAmount,
       finalPrice,
       deliveryAddress,
-      paymentStatus: 'unpaid'
+      paymentStatus: 'unpaid',
+      status: status || 'Pending'
     });
 
     // Update product stock
+    const Product = require('../models/Product');
     for (const item of items) {
       await Product.findByIdAndUpdate(
         item.productId,
@@ -49,48 +72,8 @@ router.post('/', async (req, res) => {
     const savedOrder = await order.save();
     res.status(201).json(savedOrder);
   } catch (err) {
+    console.error('Order Creation Error:', err.message);
     res.status(400).json({ message: err.message });
-  }
-});
-
-// Get all orders (admin)
-router.get('/', async (req, res) => {
-  try {
-    const orders = await Order.find().populate('items.productId');
-    res.json(orders);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Get orders by buyer email
-router.get('/buyer/:email', async (req, res) => {
-  try {
-    const orders = await Order.find({ buyerEmail: req.params.email });
-    res.json(orders);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Get orders by seller email
-router.get('/seller/:email', async (req, res) => {
-  try {
-    const orders = await Order.find({ 'items.sellerEmail': req.params.email });
-    res.json(orders);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Get order by id
-router.get('/order/:id', async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id).populate('items.productId');
-    if (!order) return res.status(404).json({ message: 'Order not found' });
-    res.json(order);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
   }
 });
 
@@ -100,66 +83,71 @@ router.patch('/:id', async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
+    const oldStatus = order.status;
+
     Object.assign(order, req.body);
     order.updatedAt = Date.now();
     const updatedOrder = await order.save();
+
+    // Check if status changed to 'Confirmed'
+    if (oldStatus !== 'Confirmed' && req.body.status === 'Confirmed') {
+      // Send confirmation email
+      const { sendOrderConfirmation } = require('../utils/emailService');
+      // Don't await this to keep response fast
+      sendOrderConfirmation(updatedOrder).catch(err => console.error('Email trigger fail:', err));
+    }
+
     res.json(updatedOrder);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
 });
 
-// Get admin dashboard stats
+// --- ANALYTICS ENDPOINTS ---
+
+// Admin Dashboard Stats (Revenue, Users, Orders)
 router.get('/stats/admin-dashboard', async (req, res) => {
   try {
-    const totalOrders = await Order.countDocuments();
-    const totalUsers = await require('../models/User').countDocuments();
     const totalRevenue = await Order.aggregate([
-      { $group: { _id: null, total: { $sum: '$finalPrice' } } }
+      { $group: { _id: null, total: { $sum: "$finalPrice" } } }
     ]);
 
+    const totalOrders = await Order.countDocuments();
+    const pendingOrders = await Order.countDocuments({ status: 'Pending' });
+
+    // Use estimatedDocumentCount for large collections or countDocuments for accuracy
+    // Assuming User model exists, otherwise return 0
+    let totalUsers = 0;
+    try {
+      totalUsers = await User.countDocuments({ role: 'client' });
+    } catch (e) {
+      console.warn("User model not found or error counting users", e);
+    }
+
     res.json([{
-      totalOrders,
-      totalUsers,
       totalRevenue: totalRevenue[0]?.total || 0,
-      pendingOrders: await Order.countDocuments({ status: 'pending' })
-    }]);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Get seller stats
-router.get('/stats/:email', async (req, res) => {
-  try {
-    const sellerOrders = await Order.find({ 'items.sellerEmail': req.params.email });
-    const totalSales = sellerOrders.reduce((sum, order) => sum + order.finalPrice, 0);
-    const totalOrders = sellerOrders.length;
-
-    res.json([{
       totalOrders,
-      totalSales,
-      completedOrders: sellerOrders.filter(o => o.status === 'delivered').length,
-      pendingOrders: sellerOrders.filter(o => o.status === 'pending').length
+      pendingOrders,
+      totalUsers
     }]);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// Get sales report
+// Sales Report (Revenue by Status)
 router.get('/admin/sales-report', async (req, res) => {
   try {
-    const report = await Order.aggregate([
+    const sales = await Order.aggregate([
       {
         $group: {
-          _id: '$status',
-          count: { $sum: 1 },
-          totalRevenue: { $sum: '$finalPrice' }
+          _id: "$status",
+          totalRevenue: { $sum: "$finalPrice" },
+          count: { $sum: 1 }
         }
       }
     ]);
-    res.json(report);
+    res.json(sales);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
