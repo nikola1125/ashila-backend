@@ -1,5 +1,6 @@
 const express = require('express');
 const Category = require('../models/Category');
+const { requireAuth, requireRole } = require('../middleware/auth');
 const router = express.Router();
 
 // Get all categories
@@ -24,7 +25,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create category (admin only)
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, requireRole(['admin']), async (req, res) => {
   const category = new Category({
     categoryName: req.body.categoryName,
     categoryImage: req.body.categoryImage,
@@ -40,7 +41,7 @@ router.post('/', async (req, res) => {
 });
 
 // Update category (admin only)
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     const category = await Category.findById(req.params.id);
     if (!category) return res.status(404).json({ message: 'Category not found' });
@@ -55,7 +56,7 @@ router.patch('/:id', async (req, res) => {
 });
 
 // Delete category (admin only)
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     const category = await Category.findByIdAndDelete(req.params.id);
     if (!category) return res.status(404).json({ message: 'Category not found' });

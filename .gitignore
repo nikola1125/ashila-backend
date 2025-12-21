@@ -72,3 +72,4 @@ coverage/
 .env.backup
 .env.old
 
+firebase-key.txt

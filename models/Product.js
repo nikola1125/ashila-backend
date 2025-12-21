@@ -10,7 +10,7 @@ const productSchema = new mongoose.Schema({
   category: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
-    required: true
+    required: false
   },
   categoryName: String,
   subcategory: String, // e.g. "Tipi i lekures"
@@ -25,7 +25,10 @@ const productSchema = new mongoose.Schema({
     default: 0
   },
   image: String,
+  imageUrl: String,
+  imageId: String,
   description: String,
+  size: String,
   stock: {
     type: Number,
     required: true,

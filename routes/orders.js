@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 const express = require('express');
 const router = express.Router();
 const Order = require('../models/Order');
@@ -154,3 +155,5 @@ router.get('/admin/sales-report', async (req, res) => {
 });
 
 module.exports = router;
+=======
+>>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53

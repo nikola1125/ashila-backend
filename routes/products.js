@@ -1,23 +1,12 @@
 const express = require('express');
-const multer = require('multer');
 const Product = require('../models/Product');
+<<<<<<< HEAD
 // Supabase import removed
 
+=======
+const { requireAuth, requireRole } = require('../middleware/auth');
+>>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
 const router = express.Router();
-
-// Configure multer for memory storage
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req, file, cb) => {
-    // Only allow image files
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'));
-    }
-  }
-});
 
 // Get all products
 router.get('/', async (req, res) => {
@@ -71,6 +60,7 @@ router.get('/top-discount', async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 // Get all bestseller products
 router.get('/bestsellers', async (req, res) => {
   try {
@@ -114,6 +104,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+=======
+>>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
 // Get products by seller (query parameter)
 router.get('/seller', async (req, res) => {
   try {
@@ -138,6 +130,7 @@ router.get('/seller/:email', async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 
 
 const { uploadToCloudflare, deleteFromCloudflare } = require('../utils/cloudflare');
@@ -145,9 +138,42 @@ const { uploadToCloudflare, deleteFromCloudflare } = require('../utils/cloudflar
 
 // Create product (seller/admin) with image upload
 router.post('/', upload.single('image'), async (req, res) => {
+=======
+// Get bestseller products by category
+router.get('/bestsellers/:category', async (req, res) => {
   try {
-    let imageUrl = req.body.image; // Use provided URL if no file
+    const { category } = req.params;
+    const filter = {
+      isBestseller: true,
+      bestsellerCategory: category
+    };
+    // isActive defaults to true, so we don't need to filter by it
+    const products = await Product.find(filter)
+      .populate('category')
+      .sort({ createdAt: -1 })
+      .limit(20);
 
+    // Return as array (frontend checks for array first, then result property)
+    res.json(products);
+  } catch (err) {
+    console.error('Bestsellers error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Get product by id (must be after /seller routes)
+router.get('/:id', async (req, res) => {
+>>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
+  try {
+    const product = await Product.findById(req.params.id).populate('category');
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+    res.json(product);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+<<<<<<< HEAD
     // If image file was uploaded, upload to Cloudflare
     if (req.file) {
       try {
@@ -156,6 +182,20 @@ router.post('/', upload.single('image'), async (req, res) => {
         return res.status(400).json({ message: `Image upload failed: ${uploadErr.message}` });
       }
     }
+=======
+// Create product (seller/admin) with R2 metadata
+router.post('/', requireAuth, requireRole(['seller', 'admin']), async (req, res) => {
+  try {
+    const imageUrl = req.body.imageUrl || req.body.image || null;
+    const imageId = req.body.imageId || null;
+
+    const sellerEmail =
+      req.body.seller ||
+      req.body.sellerEmail ||
+      req.appUser?.email ||
+      req.user?.email ||
+      (req.user?.admin === true ? 'admin' : null);
+>>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
 
     const product = new Product({
       itemName: req.body.itemName,
@@ -163,15 +203,22 @@ router.post('/', upload.single('image'), async (req, res) => {
       company: req.body.company,
       category: req.body.category, // ObjectId
       categoryName: req.body.categoryName,
+<<<<<<< HEAD
       subcategory: req.body.subcategory,
       option: req.body.option,
       size: req.body.size,
+=======
+      categoryPath: Array.isArray(req.body.categoryPath) ? req.body.categoryPath : undefined,
+>>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
       price: req.body.price,
       discount: req.body.discount || 0,
       image: imageUrl,
+      imageUrl: imageUrl,
+      imageId: imageId,
       description: req.body.description,
       stock: req.body.stock,
-      sellerEmail: req.body.seller,
+      size: req.body.size,
+      sellerEmail: sellerEmail,
       dosage: req.body.dosage,
       manufacturer: req.body.manufacturer,
       isBestseller: req.body.isBestseller === 'true' || req.body.isBestseller === true,
@@ -186,12 +233,13 @@ router.post('/', upload.single('image'), async (req, res) => {
   }
 });
 
-// Update product with optional image upload
-router.patch('/:id', upload.single('image'), async (req, res) => {
+// Update product (seller/admin) with optional R2 metadata update
+router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
+<<<<<<< HEAD
     // If new image file is uploaded, replace old image
     if (req.file) {
       try {
@@ -202,6 +250,14 @@ router.patch('/:id', upload.single('image'), async (req, res) => {
       } catch (uploadErr) {
         return res.status(400).json({ message: `Image upload failed: ${uploadErr.message}` });
       }
+=======
+    if (req.body.imageUrl) {
+      req.body.image = req.body.imageUrl;
+    }
+
+    if (req.body.categoryPath !== undefined && !Array.isArray(req.body.categoryPath)) {
+      delete req.body.categoryPath;
+>>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
     }
 
     if (req.body.variants) {
@@ -222,11 +278,12 @@ router.patch('/:id', upload.single('image'), async (req, res) => {
 });
 
 // Delete product
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, requireRole(['seller', 'admin']), async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
+<<<<<<< HEAD
     // Delete image from Cloudflare/Supabase if it exists
     if (product.image) {
       if (product.image.includes(process.env.R2_PUBLIC_URL) || product.image.includes('r2.dev')) {
@@ -241,6 +298,8 @@ router.delete('/:id', async (req, res) => {
       }
     }
 
+=======
+>>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
     res.json({ message: 'Product deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });
