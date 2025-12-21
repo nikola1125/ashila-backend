@@ -1,11 +1,6 @@
 const express = require('express');
 const Product = require('../models/Product');
-<<<<<<< HEAD
-// Supabase import removed
-
-=======
 const { requireAuth, requireRole } = require('../middleware/auth');
->>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
 const router = express.Router();
 
 // Get all products
@@ -60,52 +55,7 @@ router.get('/top-discount', async (req, res) => {
   }
 });
 
-<<<<<<< HEAD
-// Get all bestseller products
-router.get('/bestsellers', async (req, res) => {
-  try {
-    const products = await Product.find({ isBestseller: true })
-      .populate('category')
-      .sort({ createdAt: -1 });
-    res.json(products);
-  } catch (err) {
-    console.error('Bestsellers error:', err);
-    res.status(500).json({ message: err.message });
-  }
-});
 
-// Get bestseller products by category
-router.get('/bestsellers/:category', async (req, res) => {
-  try {
-    const { category } = req.params;
-    const filter = {
-      isBestseller: true,
-      bestsellerCategory: category
-    };
-    const products = await Product.find(filter)
-      .populate('category')
-      .sort({ createdAt: -1 })
-      .limit(20);
-    res.json(products);
-  } catch (err) {
-    console.error('Bestsellers error:', err);
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Get product by id
-router.get('/:id', async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id).populate('category');
-    if (!product) return res.status(404).json({ message: 'Product not found' });
-    res.json(product);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-=======
->>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
 // Get products by seller (query parameter)
 router.get('/seller', async (req, res) => {
   try {
@@ -130,15 +80,6 @@ router.get('/seller/:email', async (req, res) => {
   }
 });
 
-<<<<<<< HEAD
-
-
-const { uploadToCloudflare, deleteFromCloudflare } = require('../utils/cloudflare');
-// ... imports
-
-// Create product (seller/admin) with image upload
-router.post('/', upload.single('image'), async (req, res) => {
-=======
 // Get bestseller products by category
 router.get('/bestsellers/:category', async (req, res) => {
   try {
@@ -163,7 +104,6 @@ router.get('/bestsellers/:category', async (req, res) => {
 
 // Get product by id (must be after /seller routes)
 router.get('/:id', async (req, res) => {
->>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
   try {
     const product = await Product.findById(req.params.id).populate('category');
     if (!product) return res.status(404).json({ message: 'Product not found' });
@@ -173,16 +113,6 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-<<<<<<< HEAD
-    // If image file was uploaded, upload to Cloudflare
-    if (req.file) {
-      try {
-        imageUrl = await uploadToCloudflare(req.file.buffer, req.file.originalname);
-      } catch (uploadErr) {
-        return res.status(400).json({ message: `Image upload failed: ${uploadErr.message}` });
-      }
-    }
-=======
 // Create product (seller/admin) with R2 metadata
 router.post('/', requireAuth, requireRole(['seller', 'admin']), async (req, res) => {
   try {
@@ -195,7 +125,6 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), async (req, res)
       req.appUser?.email ||
       req.user?.email ||
       (req.user?.admin === true ? 'admin' : null);
->>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
 
     const product = new Product({
       itemName: req.body.itemName,
@@ -203,13 +132,9 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), async (req, res)
       company: req.body.company,
       category: req.body.category, // ObjectId
       categoryName: req.body.categoryName,
-<<<<<<< HEAD
       subcategory: req.body.subcategory,
       option: req.body.option,
       size: req.body.size,
-=======
-      categoryPath: Array.isArray(req.body.categoryPath) ? req.body.categoryPath : undefined,
->>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
       price: req.body.price,
       discount: req.body.discount || 0,
       image: imageUrl,
@@ -239,25 +164,12 @@ router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), async (req, 
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-<<<<<<< HEAD
-    // If new image file is uploaded, replace old image
-    if (req.file) {
-      try {
-        // Cloudflare images don't necessarily need explicit delete if we just overwrite the URL, 
-        // but for hygiene you might delete. For now, just upload new.
-        const newImageUrl = await uploadToCloudflare(req.file.buffer, req.file.originalname);
-        req.body.image = newImageUrl;
-      } catch (uploadErr) {
-        return res.status(400).json({ message: `Image upload failed: ${uploadErr.message}` });
-      }
-=======
     if (req.body.imageUrl) {
       req.body.image = req.body.imageUrl;
     }
 
     if (req.body.categoryPath !== undefined && !Array.isArray(req.body.categoryPath)) {
       delete req.body.categoryPath;
->>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
     }
 
     if (req.body.variants) {
@@ -283,23 +195,7 @@ router.delete('/:id', requireAuth, requireRole(['seller', 'admin']), async (req,
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-<<<<<<< HEAD
-    // Delete image from Cloudflare/Supabase if it exists
-    if (product.image) {
-      if (product.image.includes(process.env.R2_PUBLIC_URL) || product.image.includes('r2.dev')) {
-        await deleteFromCloudflare(product.image);
-      } else if (product.image.includes('supabase')) {
-        // Keep existing logic if 'deleteImage' was a real function from somewhere else,
-        // but it looked like it wasn't imported in the file view.
-        // If deleteImage is not defined, this would crash.
-        // Given I didn't see deleteImage imported, let's comment it out or handle it safely.
-        // Looking at line 4: // Supabase import removed. So deleteImage is likely undefined.
-        console.log('Skipping Supabase deletion as utility is removed.');
-      }
-    }
 
-=======
->>>>>>> 9a5b9c9073205f952d1433b11764cd4b94463e53
     res.json({ message: 'Product deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });
