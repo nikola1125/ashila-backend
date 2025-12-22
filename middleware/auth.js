@@ -27,7 +27,8 @@ const requireAuth = async (req, res, next) => {
     // 1) Try admin JWT (username/password login)
     const adminDecoded = tryVerifyAdminJwt(token);
     if (adminDecoded) {
-      req.user = { admin: true, typ: 'admin' };
+      // FIX: Spread adminDecoded to ensure 'email' and other payload fields are passed to req.user
+      req.user = { ...adminDecoded, admin: true };
       return next();
     }
 
