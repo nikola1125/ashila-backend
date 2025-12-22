@@ -72,7 +72,7 @@ app.use('/medicines', require('./routes/products'));
 app.use('/products', require('./routes/products'));
 app.use('/orders', require('./routes/orders'));
 app.use('/reviews', require('./routes/reviews'));
-app.use('/admin', require('./routes/admin'));
+app.use('/admin', require('./routes/adminAuth'));
 
 // Health check
 app.get('/health', (req, res) => {

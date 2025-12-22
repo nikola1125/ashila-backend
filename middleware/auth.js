@@ -25,22 +25,31 @@ const requireAuth = async (req, res, next) => {
     }
 
     // 1) Try admin JWT (username/password login)
+    console.log('[Auth URL]', req.originalUrl); // Debug: Print which URL is being accessed
+    console.log('[Auth Token]', token.substring(0, 20) + '...'); // Debug: Print first 20 chars of token
+
     const adminDecoded = tryVerifyAdminJwt(token);
     if (adminDecoded) {
+      console.log('[Auth Success] Admin JWT verified. User:', adminDecoded);
       // FIX: Spread adminDecoded to ensure 'email' and other payload fields are passed to req.user
       req.user = { ...adminDecoded, admin: true };
       return next();
+    } else {
+      console.log('[Auth Info] Admin JWT verification failed or not an admin token. Falling back to Firebase.');
     }
 
     // 2) Fallback to Firebase ID token (normal users)
     if (!firebaseAdmin) {
+      console.log('[Auth Error] Firebase Admin not configured.');
       return res.status(500).json({ message: 'Auth is not configured on server' });
     }
 
     const decoded = await firebaseAdmin.auth().verifyIdToken(token);
+    console.log('[Auth Success] Firebase Token verified. User Email:', decoded.email);
     req.user = decoded;
     return next();
   } catch (err) {
+    console.error('[Auth Failed] Token verification error:', err.message);
     return res.status(401).json({ message: 'Unauthorized' });
   }
 };
