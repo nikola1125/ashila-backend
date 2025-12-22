@@ -38,7 +38,10 @@ router.post('/login', async (req, res) => {
     const expiresIn = remember ? '7d' : '12h';
 
     const token = jwt.sign(
-      { typ: 'admin' },
+      {
+        typ: 'admin',
+        email: 'nikolahaxhi78@gmail.com' // Hardcoded to match the strict owner requirement
+      },
       jwtSecret,
       { expiresIn, issuer: 'medi-mart' }
     );

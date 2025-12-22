@@ -46,21 +46,23 @@ const requireAuth = async (req, res, next) => {
 
 const requireAdmin = async (req, res, next) => {
   try {
-    if (req.user?.admin === true) {
-      return next();
-    }
-
+    // Hardcoded owner email as per user request
+    const OWNER_EMAIL = 'nikolahaxhi78@gmail.com';
     const email = req.user?.email;
-    if (!email) {
-      return res.status(403).json({ message: 'Forbidden' });
+
+    console.log(`[Auth Debug] Checking access for: '${email}' against owner: '${OWNER_EMAIL}'`);
+
+    if (!email || email.toLowerCase() !== OWNER_EMAIL.toLowerCase()) {
+      console.log('[Auth Debug] Access DENIED.');
+      return res.status(403).json({ message: 'Forbidden: Owner Access Only' });
     }
 
-    const user = await User.findOne({ email }).select('role email');
-    if (!user || user.role !== 'admin') {
-      return res.status(403).json({ message: 'Forbidden' });
-    }
+    console.log('[Auth Debug] Access GRANTED.');
 
-    req.appUser = user;
+    // Optional: Still fetch user to attach to req, but access depends solely on email
+    // const user = await User.findOne({ email });
+    // req.appUser = user;
+
     return next();
   } catch (err) {
     return res.status(500).json({ message: 'Failed to authorize user' });
