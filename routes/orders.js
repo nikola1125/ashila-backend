@@ -35,8 +35,7 @@ router.post('/', async (req, res) => {
   try {
     const { items, buyerEmail, buyerName, deliveryAddress, status } = req.body;
 
-    let totalPrice = 0;
-    let discountAmount = 0;
+    const SHIPPING_COST = 200; // Fixed delivery fee
 
     // Calculate total
     items.forEach(item => {
@@ -46,7 +45,8 @@ router.post('/', async (req, res) => {
       discountAmount += discount;
     });
 
-    const finalPrice = totalPrice - discountAmount;
+    // Final price includes shipping
+    const finalPrice = totalPrice - discountAmount + SHIPPING_COST;
 
     const order = new Order({
       orderNumber: generateOrderNumber(),
@@ -56,6 +56,7 @@ router.post('/', async (req, res) => {
       totalPrice,
       discountAmount,
       finalPrice,
+      shippingCost: SHIPPING_COST,
       deliveryAddress,
       paymentStatus: 'unpaid',
       status: status || 'Pending'
