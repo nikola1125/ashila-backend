@@ -7,7 +7,7 @@ const User = require('../models/User'); // Assuming you have a User model
 // Get all orders (Admin)
 router.get('/', async (req, res) => {
   try {
-    const orders = await Order.find().sort({ createdAt: -1 });
+    const orders = await Order.find().populate('items.productId').sort({ createdAt: -1 });
     res.json(orders);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -18,7 +18,7 @@ router.get('/', async (req, res) => {
 router.get('/:email', async (req, res) => {
   try {
     const email = req.params.email;
-    const orders = await Order.find({ buyerEmail: email }).sort({ createdAt: -1 });
+    const orders = await Order.find({ buyerEmail: email }).populate('items.productId').sort({ createdAt: -1 });
     res.json(orders);
   } catch (err) {
     res.status(500).json({ message: err.message });
