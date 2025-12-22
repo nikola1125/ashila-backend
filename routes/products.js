@@ -80,6 +80,25 @@ router.get('/seller/:email', async (req, res) => {
   }
 });
 
+// Get all bestseller products
+router.get('/bestsellers', async (req, res) => {
+  try {
+    const filter = {
+      isBestseller: true,
+      isActive: true
+    };
+    const products = await Product.find(filter)
+      .populate('category')
+      .sort({ createdAt: -1 })
+      .limit(20);
+
+    res.json({ result: products });
+  } catch (err) {
+    console.error('Bestsellers error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // Get bestseller products by category
 router.get('/bestsellers/:category', async (req, res) => {
   try {
