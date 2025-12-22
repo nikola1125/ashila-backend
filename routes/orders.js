@@ -2,10 +2,66 @@
 const express = require('express');
 const router = express.Router();
 const Order = require('../models/Order');
-const User = require('../models/User'); // Assuming you have a User model
+const User = require('../models/User');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
+
+// Generate order number
+const generateOrderNumber = () => {
+  return 'ORD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+};
+
+// --- ANALYTICS ENDPOINTS (Must be before dynamic routes) ---
+
+// Admin Dashboard Stats (Revenue, Users, Orders)
+router.get('/stats/admin-dashboard', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const totalRevenue = await Order.aggregate([
+      { $group: { _id: null, total: { $sum: "$finalPrice" } } }
+    ]);
+
+    const totalOrders = await Order.countDocuments();
+    const pendingOrders = await Order.countDocuments({ status: 'Pending' });
+
+    // Use estimatedDocumentCount for large collections or countDocuments for accuracy
+    // Assuming User model exists, otherwise return 0
+    let totalUsers = 0;
+    try {
+      totalUsers = await User.countDocuments({ role: 'client' });
+    } catch (e) {
+      console.warn("User model not found or error counting users", e);
+    }
+
+    res.json([{
+      totalRevenue: totalRevenue[0]?.total || 0,
+      totalOrders,
+      pendingOrders,
+      totalUsers
+    }]);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Sales Report (Revenue by Status)
+router.get('/admin/sales-report', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const sales = await Order.aggregate([
+      {
+        $group: {
+          _id: "$status",
+          totalRevenue: { $sum: "$finalPrice" },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    res.json(sales);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 // Get all orders (Admin)
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const orders = await Order.find().populate('items.productId').sort({ createdAt: -1 });
     res.json(orders);
@@ -23,19 +79,14 @@ router.get('/:email', async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-});
-
-// Generate order number
-const generateOrderNumber = () => {
-  return 'ORD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-};
-
-// Create new order
-router.post('/', async (req, res) => {
+}); router.post('/', async (req, res) => {
   try {
     const { items, buyerEmail, buyerName, deliveryAddress, status } = req.body;
 
-    const SHIPPING_COST = 200; // Fixed delivery fee
+    const SHIPPING_COST = 300; // Fixed delivery fee
+
+    let totalPrice = 0;
+    let discountAmount = 0;
 
     // Calculate total
     items.forEach(item => {
@@ -105,54 +156,5 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-// --- ANALYTICS ENDPOINTS ---
-
-// Admin Dashboard Stats (Revenue, Users, Orders)
-router.get('/stats/admin-dashboard', async (req, res) => {
-  try {
-    const totalRevenue = await Order.aggregate([
-      { $group: { _id: null, total: { $sum: "$finalPrice" } } }
-    ]);
-
-    const totalOrders = await Order.countDocuments();
-    const pendingOrders = await Order.countDocuments({ status: 'Pending' });
-
-    // Use estimatedDocumentCount for large collections or countDocuments for accuracy
-    // Assuming User model exists, otherwise return 0
-    let totalUsers = 0;
-    try {
-      totalUsers = await User.countDocuments({ role: 'client' });
-    } catch (e) {
-      console.warn("User model not found or error counting users", e);
-    }
-
-    res.json([{
-      totalRevenue: totalRevenue[0]?.total || 0,
-      totalOrders,
-      pendingOrders,
-      totalUsers
-    }]);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Sales Report (Revenue by Status)
-router.get('/admin/sales-report', async (req, res) => {
-  try {
-    const sales = await Order.aggregate([
-      {
-        $group: {
-          _id: "$status",
-          totalRevenue: { $sum: "$finalPrice" },
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-    res.json(sales);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
 
 module.exports = router;

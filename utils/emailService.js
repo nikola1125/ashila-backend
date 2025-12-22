@@ -21,7 +21,7 @@ const sendOrderConfirmation = async (order) => {
   // Items map is now inline
 
   const mailOptions = {
-    from: `"Medi-Mart" <${process.env.EMAIL_USER}>`,
+    from: `"Farmaci Ashila" <${process.env.EMAIL_USER}>`,
     to: order.buyerEmail,
     subject: `Order Confirmation #${order.orderNumber}`,
     html: `
@@ -29,7 +29,7 @@ const sendOrderConfirmation = async (order) => {
         <!-- Header -->
         <div style="background-color: #5A3F2A; padding: 30px; text-align: center;">
           <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 1px;">INVOICE DETAILS</h1>
-          <p style="color: #e0e0e0; margin: 5px 0 0; font-size: 14px;">Thank you for shopping with Medi-Mart</p>
+          <p style="color: #e0e0e0; margin: 5px 0 0; font-size: 14px;">Thank you for shopping with Farmaci Ashila</p>
         </div>
         
         <div style="padding: 30px;">
@@ -42,9 +42,9 @@ const sendOrderConfirmation = async (order) => {
                   <p style="margin: 0; color: #666; font-size: 12px;">Status: <span style="font-weight: bold; color: ${order.paymentStatus === 'paid' ? '#2ecc71' : '#e74c3c'}">${order.paymentStatus.toUpperCase()}</span></p>
                </div>
                <div style="text-align: right; margin-top: 10px;">
-                  <h3 style="margin: 0; font-size: 14px; color: #333;">Medi-Mart Pharmacy</h3>
+                  <h3 style="margin: 0; font-size: 14px; color: #333;">Farmaci Ashila</h3>
                   <p style="margin: 0; font-size: 12px; color: #777;">Tirane, Albania</p>
-                  <p style="margin: 0; font-size: 12px; color: #777;">support@medimart.com</p>
+                  <p style="margin: 0; font-size: 12px; color: #777;">farmaciashila11@gmail.com</p>
                </div>
             </div>
           </div>
@@ -118,7 +118,7 @@ const sendOrderConfirmation = async (order) => {
 
         <!-- Footer -->
         <div style="background-color: #333; color: #888; padding: 20px; text-align: center; font-size: 12px;">
-          <p style="margin: 0;">&copy; ${new Date().getFullYear()} Medi-Mart. All rights reserved.</p>
+          <p style="margin: 0;">&copy; ${new Date().getFullYear()} Farmaci Ashila. All rights reserved.</p>
           <p style="margin: 5px 0 0;">This email was sent to ${order.buyerEmail}</p>
         </div>
       </div>
