@@ -5,6 +5,7 @@
 .env.production
 .env.test
 *.env
+.env.fixed
 
 # Dependencies
 node_modules/
