@@ -14,8 +14,10 @@ const productSchema = new mongoose.Schema({
   },
   categoryName: String,
   subcategory: String, // e.g. "Tipi i lekures"
+  productType: String,
   option: String,      // e.g. "Lekure normale"
   size: String,        // e.g. "50ml", "100 tablets"
+  skinProblem: String, // e.g. "papules", "cyst"
   price: {
     type: Number,
     required: true
@@ -58,6 +60,10 @@ const productSchema = new mongoose.Schema({
     default: true
   },
   isBestseller: {
+    type: Boolean,
+    default: false
+  },
+  isFreeDelivery: {
     type: Boolean,
     default: false
   },

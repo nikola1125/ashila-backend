@@ -43,7 +43,7 @@ const sendOrderConfirmation = async (order) => {
                </div>
                <div style="text-align: right; margin-top: 10px;">
                   <h3 style="margin: 0; font-size: 14px; color: #333;">Farmaci Ashila</h3>
-                  <p style="margin: 0; font-size: 12px; color: #777;">Tirane, Albania</p>
+                  <p style="margin: 0; font-size: 12px; color: #777;">Lezhe, Albania</p>
                   <p style="margin: 0; font-size: 12px; color: #777;">farmaciashila11@gmail.com</p>
                </div>
             </div>

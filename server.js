@@ -73,6 +73,7 @@ app.use('/products', require('./routes/products'));
 app.use('/orders', require('./routes/orders'));
 app.use('/reviews', require('./routes/reviews'));
 app.use('/admin', require('./routes/adminAuth'));
+app.use('/settings', require('./routes/settings'));
 
 // Health check
 app.get('/health', (req, res) => {

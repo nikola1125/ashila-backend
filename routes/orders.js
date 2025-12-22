@@ -26,7 +26,7 @@ router.get('/stats/admin-dashboard', requireAuth, requireAdmin, async (req, res)
     // Assuming User model exists, otherwise return 0
     let totalUsers = 0;
     try {
-      totalUsers = await User.countDocuments({ role: 'client' });
+      totalUsers = await User.countDocuments({ role: 'user' });
     } catch (e) {
       console.warn("User model not found or error counting users", e);
     }
@@ -55,6 +55,70 @@ router.get('/admin/sales-report', requireAuth, requireAdmin, async (req, res) =>
       }
     ]);
     res.json(sales);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Revenue Series Analytics (Day, Week, Month, Year)
+router.get('/admin/revenue-series', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { range = 'day', startDate, endDate } = req.query;
+    let groupBy = {};
+    let dateFilter = {};
+
+    // Explicit Date Range Handling
+    if (startDate || endDate) {
+      dateFilter.createdAt = {};
+      if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+      if (endDate) {
+        // Create end date object set to end of that day
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.createdAt.$lte = end;
+      }
+    }
+
+    const now = new Date();
+
+    if (range === 'day') {
+      // Default: Last 7 days if no dates provided
+      if (!startDate && !endDate) dateFilter = { createdAt: { $gte: new Date(now.setDate(now.getDate() - 30)) } };
+      groupBy = {
+        $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+      };
+    } else if (range === 'week') {
+      // Default: Last 12 weeks
+      if (!startDate && !endDate) dateFilter = { createdAt: { $gte: new Date(now.setDate(now.getDate() - 84)) } };
+      groupBy = {
+        $dateToString: { format: "%Y-%U", date: "$createdAt" }
+      };
+    } else if (range === 'month') {
+      // Default: Last 12 months
+      if (!startDate && !endDate) dateFilter = { createdAt: { $gte: new Date(now.setMonth(now.getMonth() - 12)) } };
+      groupBy = {
+        $dateToString: { format: "%Y-%m", date: "$createdAt" }
+      };
+    } else if (range === 'year') {
+      // All time by year default
+      groupBy = {
+        $dateToString: { format: "%Y", date: "$createdAt" }
+      };
+    }
+
+    const series = await Order.aggregate([
+      { $match: { ...dateFilter, status: { $ne: 'Cancelled' } } }, // Exclude cancelled?
+      {
+        $group: {
+          _id: groupBy,
+          totalRevenue: { $sum: "$finalPrice" },
+          totalOrders: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    res.json(series);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

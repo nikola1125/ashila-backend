@@ -1,25 +1,45 @@
 const express = require('express');
 const Product = require('../models/Product');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const multer = require('multer');
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit matching express limit
+});
 const router = express.Router();
 
 // Get all products
 router.get('/', async (req, res) => {
   try {
-    const { category, search, seller } = req.query;
+    const { category, search, seller, limit } = req.query;
     let filter = {};
 
     if (category) filter.categoryName = category;
     if (seller) filter.sellerEmail = seller;
     if (search) {
+      console.log('Search Query:', search);
+      const escapeRegex = (text) => text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+      const regex = new RegExp(escapeRegex(search), 'i');
+
       filter.$or = [
-        { itemName: { $regex: search, $options: 'i' } },
-        { genericName: { $regex: search, $options: 'i' } },
-        { company: { $regex: search, $options: 'i' } }
+        { itemName: { $regex: regex } },
+        { genericName: { $regex: regex } },
+        { company: { $regex: regex } },
+        { categoryName: { $regex: regex } }
       ];
     }
 
-    const products = await Product.find(filter).populate('category');
+    console.log('Search Filter:', JSON.stringify(filter));
+
+    let query = Product.find(filter).populate('category');
+
+    if (limit) {
+      query = query.limit(parseInt(limit));
+    }
+
+    const products = await query;
+    console.log(`Found ${products.length} products`);
+
     res.json({ result: products });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -133,9 +153,21 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create product (seller/admin) with R2 metadata
-router.post('/', requireAuth, requireRole(['seller', 'admin']), async (req, res) => {
+router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('image'), async (req, res) => {
   try {
-    const imageUrl = req.body.imageUrl || req.body.image || null;
+    let imageUrl = req.body.imageUrl || req.body.image || null;
+
+    // Upload image to R2 if file exists
+    if (req.file) {
+      const { uploadToCloudflare } = require('../utils/cloudflare');
+      try {
+        imageUrl = await uploadToCloudflare(req.file.buffer, req.file.originalname);
+      } catch (uploadError) {
+        console.error('Image upload failed:', uploadError);
+        return res.status(500).json({ message: 'Failed to upload image' });
+      }
+    }
+
     const imageId = req.body.imageId || null;
 
     const sellerEmail =
@@ -152,6 +184,7 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), async (req, res)
       category: req.body.category, // ObjectId
       categoryName: req.body.categoryName,
       subcategory: req.body.subcategory,
+      productType: req.body.productType,
       option: req.body.option,
       size: req.body.size,
       price: req.body.price,
@@ -167,6 +200,8 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), async (req, res)
       manufacturer: req.body.manufacturer,
       isBestseller: req.body.isBestseller === 'true' || req.body.isBestseller === true,
       bestsellerCategory: req.body.bestsellerCategory || null,
+      isFreeDelivery: req.body.isFreeDelivery === 'true' || req.body.isFreeDelivery === true,
+      skinProblem: req.body.skinProblem,
       variants: req.body.variants ? JSON.parse(req.body.variants) : []
     });
 
@@ -178,13 +213,27 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), async (req, res)
 });
 
 // Update product (seller/admin) with optional R2 metadata update
-router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), async (req, res) => {
+router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), upload.single('image'), async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    if (req.body.imageUrl) {
+    if (req.file) {
+      const { uploadToCloudflare } = require('../utils/cloudflare');
+      try {
+        const imageUrl = await uploadToCloudflare(req.file.buffer, req.file.originalname);
+        req.body.image = imageUrl;
+        req.body.imageUrl = imageUrl;
+      } catch (uploadError) {
+        console.error('Image upload failed:', uploadError);
+        return res.status(500).json({ message: 'Failed to upload image' });
+      }
+    } else if (req.body.imageUrl) {
       req.body.image = req.body.imageUrl;
+    }
+
+    if (req.body.isFreeDelivery !== undefined) {
+      req.body.isFreeDelivery = req.body.isFreeDelivery === 'true' || req.body.isFreeDelivery === true;
     }
 
     if (req.body.categoryPath !== undefined && !Array.isArray(req.body.categoryPath)) {
