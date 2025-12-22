@@ -47,24 +47,15 @@ const requireAuth = async (req, res, next) => {
 
 const requireAdmin = async (req, res, next) => {
   try {
-    // Hardcoded owner email as per user request
-    const OWNER_EMAIL = 'nikolahaxhi78@gmail.com';
-    const email = req.user?.email;
-
-    console.log(`[Auth Debug] Checking access for: '${email}' against owner: '${OWNER_EMAIL}'`);
-
-    if (!email || email.toLowerCase() !== OWNER_EMAIL.toLowerCase()) {
-      console.log('[Auth Debug] Access DENIED.');
-      return res.status(403).json({ message: 'Forbidden: Owner Access Only' });
+    // Strict separation: Only allow users effectively logged in via Admin Credentials
+    // (verified by the presence of 'typ: "admin"' in the JWT)
+    if (req.user?.typ === 'admin') {
+      console.log('[Auth Debug] Admin Access GRANTED (Credential Auth).');
+      return next();
     }
 
-    console.log('[Auth Debug] Access GRANTED.');
-
-    // Optional: Still fetch user to attach to req, but access depends solely on email
-    // const user = await User.findOne({ email });
-    // req.appUser = user;
-
-    return next();
+    console.log('[Auth Debug] Admin Access DENIED (Invalid Token Type).');
+    return res.status(403).json({ message: 'Forbidden: Admin Credentials Required' });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to authorize user' });
   }
