@@ -123,6 +123,76 @@ app.get('/debug-email', async (req, res) => {
   }
 });
 
+// DEBUG NETWORK ENDPOINT
+app.get('/debug-network', async (req, res) => {
+  const dns = require('dns');
+  const net = require('net');
+
+  const results = {
+    timestamp: new Date().toISOString(),
+    host: 'smtp.gmail.com',
+    dns: { status: 'pending' },
+    ports: {
+      587: { status: 'pending' },
+      465: { status: 'pending' }
+    }
+  };
+
+  try {
+    // 1. DNS Lookup
+    await new Promise((resolve) => {
+      dns.resolve('smtp.gmail.com', (err, addresses) => {
+        if (err) {
+          results.dns = { status: 'failed', error: err.message };
+        } else {
+          results.dns = { status: 'success', addresses };
+        }
+        resolve();
+      });
+    });
+
+    // 2. TCP Connection Test Helper
+    const checkPort = (port) => {
+      return new Promise((resolve) => {
+        const socket = new net.Socket();
+        socket.setTimeout(3000); // 3s timeout
+
+        socket.on('connect', () => {
+          results.ports[port] = { status: 'open' };
+          socket.destroy();
+          resolve();
+        });
+
+        socket.on('timeout', () => {
+          results.ports[port] = { status: 'timeout' };
+          socket.destroy();
+          resolve();
+        });
+
+        socket.on('error', (err) => {
+          results.ports[port] = { status: 'closed', error: err.message };
+          socket.destroy();
+          resolve();
+        });
+
+        socket.connect(port, 'smtp.gmail.com');
+      });
+    };
+
+    // 3. Run Port Checks
+    await Promise.all([checkPort(587), checkPort(465)]);
+
+    res.json(results);
+
+  } catch (error) {
+    res.status(500).json({
+      error: 'Diagnostic tool failed',
+      details: error.message,
+      stack: error.stack
+    });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });
