@@ -52,43 +52,71 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Helper function to group product variants
+// Helper function to group product variants by variantGroupId
 function groupVariants(products) {
   const grouped = {};
+  const ungrouped = [];
+  const processedIds = new Set(); // Track processed product IDs to prevent duplicates
   
+  // First pass: collect all products with variantGroupId
   products.forEach(product => {
-    const key = `${product.itemName}-${product.company}-${product.categoryName}`;
-    
-    if (!grouped[key]) {
-      grouped[key] = {
-        ...product.toObject(),
-        variants: [],
-        minPrice: product.price,
-        maxPrice: product.price,
-        totalStock: 0
-      };
-      delete grouped[key].size;
-      delete grouped[key].stock;
+    // Skip if already processed (prevent duplicates)
+    if (processedIds.has(product._id.toString())) {
+      return;
     }
     
-    // Add variant info
-    grouped[key].variants.push({
-      _id: product._id,
-      size: product.size,
-      price: product.price,
-      stock: product.stock,
-      discount: product.discount
-    });
-    
-    // Update price range
-    grouped[key].minPrice = Math.min(grouped[key].minPrice, product.price);
-    grouped[key].maxPrice = Math.max(grouped[key].maxPrice, product.price);
-    
-    // Update total stock
-    grouped[key].totalStock += product.stock;
+    // If product has variantGroupId, group by it
+    if (product.variantGroupId) {
+      const key = product.variantGroupId;
+      
+      if (!grouped[key]) {
+        // Use the first product as the base
+        const baseProduct = product.toObject();
+        grouped[key] = {
+          ...baseProduct,
+          _id: baseProduct._id, // Keep the first variant's ID for navigation
+          variants: [],
+          minPrice: product.price,
+          maxPrice: product.price,
+          totalStock: 0,
+          variantGroupId: key // Keep variantGroupId for reference
+        };
+        // Remove size and stock from base product (they're in variants)
+        delete grouped[key].size;
+        delete grouped[key].stock;
+      }
+      
+      // Add variant info
+      grouped[key].variants.push({
+        _id: product._id,
+        size: product.size || product.dosage || '',
+        price: product.price,
+        stock: product.stock,
+        discount: product.discount || 0,
+        image: product.image || product.imageUrl
+      });
+      
+      // Update price range
+      grouped[key].minPrice = Math.min(grouped[key].minPrice, product.price);
+      grouped[key].maxPrice = Math.max(grouped[key].maxPrice, product.price);
+      
+      // Update total stock
+      grouped[key].totalStock += (product.stock || 0);
+      
+      // Mark as processed
+      processedIds.add(product._id.toString());
+    } else {
+      // Products without variantGroupId are standalone
+      // Check if we've already seen this product
+      if (!processedIds.has(product._id.toString())) {
+        ungrouped.push(product);
+        processedIds.add(product._id.toString());
+      }
+    }
   });
   
-  return Object.values(grouped);
+  // Return grouped products + ungrouped products
+  return [...Object.values(grouped), ...ungrouped];
 }
 
 // Get latest products
@@ -160,16 +188,64 @@ router.get('/bestsellers', async (req, res) => {
       isBestseller: true,
       isActive: true
     };
-    const products = await Product.find(filter)
-      .populate('category')
-      .sort({ createdAt: -1 })
-      .limit(20);
-
+    
+    // If grouping is requested, find all variants of bestseller products
     if (group === 'true') {
-      const groupedProducts = groupVariants(products);
-      res.json({ result: groupedProducts });
+      // First, get all bestseller products (no limit yet)
+      const bestsellerProducts = await Product.find(filter)
+        .populate('category')
+        .sort({ createdAt: -1 });
+      
+      // Collect all variantGroupIds from bestseller products
+      const variantGroupIds = bestsellerProducts
+        .filter(p => p.variantGroupId)
+        .map(p => p.variantGroupId);
+      
+      // Also collect unique variantGroupIds (remove duplicates)
+      const uniqueVariantGroupIds = [...new Set(variantGroupIds)];
+      
+      // Find all products that are either:
+      // 1. Marked as bestseller directly, OR
+      // 2. Part of a variant group that has at least one bestseller
+      const queryConditions = [
+        { isBestseller: true, isActive: true }
+      ];
+      
+      if (uniqueVariantGroupIds.length > 0) {
+        queryConditions.push({ variantGroupId: { $in: uniqueVariantGroupIds }, isActive: true });
+      }
+      
+      const allProducts = await Product.find({
+        $or: queryConditions
+      })
+        .populate('category')
+        .sort({ createdAt: -1 });
+      
+      // Group variants together
+      const groupedProducts = groupVariants(allProducts);
+      
+      // Log for debugging
+      console.log(`Bestsellers: Found ${bestsellerProducts.length} bestseller products`);
+      console.log(`Bestsellers: Found ${uniqueVariantGroupIds.length} unique variant groups`);
+      console.log(`Bestsellers: Found ${allProducts.length} total products (including variants)`);
+      console.log(`Bestsellers: Grouped into ${groupedProducts.length} products`);
+      groupedProducts.forEach(p => {
+        if (p.variants && p.variants.length > 0) {
+          console.log(`  - ${p.itemName}: ${p.variants.length} variants`);
+        }
+      });
+      
+      // Limit to 20 grouped products after grouping
+      const limitedGroupedProducts = groupedProducts.slice(0, 20);
+      
+      res.json({ result: limitedGroupedProducts });
     } else {
-      res.json({ result: products });
+      // No grouping - return individual products with limit
+      const bestsellerProducts = await Product.find(filter)
+        .populate('category')
+        .sort({ createdAt: -1 })
+        .limit(20);
+      res.json({ result: bestsellerProducts });
     }
   } catch (err) {
     console.error('Bestsellers error:', err);
@@ -227,7 +303,20 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
     }
 
     const imageId = req.body.imageId || null;
-    const variants = req.body.variants ? JSON.parse(req.body.variants) : [];
+    // Handle variants - can be array (JSON) or string (form-data)
+    let variants = [];
+    if (req.body.variants) {
+      if (Array.isArray(req.body.variants)) {
+        variants = req.body.variants;
+      } else if (typeof req.body.variants === 'string') {
+        try {
+          variants = JSON.parse(req.body.variants);
+        } catch (e) {
+          console.error('Failed to parse variants:', e);
+          variants = [];
+        }
+      }
+    }
 
     const sellerEmail =
       req.body.seller ||
@@ -272,13 +361,33 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
     }
 
     if (variants.length > 0) {
+      // Check for duplicate sizes in the variant group if variantGroupId is provided
+      if (variantGroupId) {
+        const existingProducts = await Product.find({ variantGroupId: variantGroupId });
+        const existingSizes = existingProducts.map(p => (p.size || p.dosage || '').toLowerCase().trim());
+        
+        for (const variant of variants) {
+          const variantSize = (variant.size || '').toLowerCase().trim();
+          if (variantSize && existingSizes.includes(variantSize)) {
+            return res.status(400).json({ 
+              message: `A variant with size "${variant.size}" already exists for this product. Please use a different size or edit the existing variant.` 
+            });
+          }
+        }
+      }
+
       // Create separate product documents for each variant
       for (const variant of variants) {
+        // Validate variant has required fields
+        if (!variant.size || !variant.size.trim()) {
+          return res.status(400).json({ message: 'Variant size is required' });
+        }
+
         const variantProduct = new Product({
           ...baseProductData,
-          size: variant.size, // Use variant size as the main size
+          size: variant.size.trim(), // Use variant size as the main size
           price: variant.price || req.body.price, // Use variant price if provided
-          stock: variant.stock, // Use variant stock
+          stock: Number(variant.stock) || 0, // Use variant stock, ensure it's a number
           discount: variant.discount || req.body.discount || 0, // Use variant discount if provided
           variants: [], // No nested variants for variant products
           variantGroupId: variantGroupId // Link all variants together
@@ -339,6 +448,36 @@ router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), upload.singl
         req.body.variants = JSON.parse(req.body.variants);
       } catch (err) {
         return res.status(400).json({ message: 'Invalid variants data' });
+      }
+    }
+
+    // Handle bestseller status: if marking as bestseller and product has variantGroupId,
+    // mark all variants in the group as bestseller
+    const isMarkingBestseller = req.body.isBestseller === 'true' || req.body.isBestseller === true;
+    const bestsellerCategory = req.body.bestsellerCategory || product.bestsellerCategory;
+    
+    if (isMarkingBestseller && product.variantGroupId) {
+      // Mark all products in the same variant group as bestseller
+      await Product.updateMany(
+        { variantGroupId: product.variantGroupId },
+        { 
+          isBestseller: true,
+          bestsellerCategory: bestsellerCategory,
+          updatedAt: Date.now()
+        }
+      );
+    } else if (req.body.isBestseller === 'false' || req.body.isBestseller === false) {
+      // If unmarking as bestseller and product has variantGroupId,
+      // unmark all variants in the group
+      if (product.variantGroupId) {
+        await Product.updateMany(
+          { variantGroupId: product.variantGroupId },
+          { 
+            isBestseller: false,
+            bestsellerCategory: null,
+            updatedAt: Date.now()
+          }
+        );
       }
     }
 
