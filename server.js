@@ -80,6 +80,47 @@ app.get('/health', (req, res) => {
   res.json({ status: 'Server is running', timestamp: new Date() });
 });
 
+// DEBUG EMAIL ENDPOINT
+app.get('/debug-email', async (req, res) => {
+  const nodemailer = require('nodemailer');
+  const user = process.env.EMAIL_USER;
+  const pass = process.env.EMAIL_PASS;
+
+  if (!user || !pass) {
+    return res.status(500).json({
+      success: false,
+      message: 'EMAIL_USER or EMAIL_PASS environment variables are missing!',
+      env: {
+        EMAIL_USER_EXISTS: !!user,
+        EMAIL_PASS_EXISTS: !!pass,
+        EMAIL_USER_VALUE: user ? user.length + ' chars' : 'null'
+      }
+    });
+  }
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass }
+  });
+
+  try {
+    const info = await transporter.sendMail({
+      from: user,
+      to: user, // Send to yourself
+      subject: 'Debug Email Test from Render',
+      text: 'If you see this, your Render email configuration is working perfectly!',
+    });
+    res.json({ success: true, message: 'Email sent successfully!', messageId: info.messageId });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Email sending failed',
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });
