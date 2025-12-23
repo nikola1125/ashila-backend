@@ -42,8 +42,8 @@ if (!connectionString.endsWith('/') && !connectionString.includes('?')) {
   // Add database name if not present
   if (!connectionString.match(/\/[^\/\?]+(\?|$)/)) {
     connectionString = connectionString.endsWith('/')
-      ? connectionString + 'medi-mart'
-      : connectionString + '/medi-mart';
+      ? connectionString + 'test'
+      : connectionString + '/test';
   }
 }
 

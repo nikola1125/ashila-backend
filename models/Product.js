@@ -81,6 +81,10 @@ const productSchema = new mongoose.Schema({
       default: 0
     }
   }],
+  variantGroupId: {
+    type: String,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now

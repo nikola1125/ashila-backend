@@ -190,32 +190,58 @@ router.get('/:email', async (req, res) => {
 // Update order status (admin/seller)
 router.patch('/:id', async (req, res) => {
   try {
+    console.log(`[DEBUG] Order status update request for ID: ${req.params.id}`);
+    console.log(`[DEBUG] Request body:`, req.body);
+    
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
     const oldStatus = order.status;
+    console.log(`[DEBUG] Current order status: "${oldStatus}"`);
+    console.log(`[DEBUG] New status from request: "${req.body.status}"`);
 
     Object.assign(order, req.body);
     order.updatedAt = Date.now();
     const updatedOrder = await order.save();
+    
+    console.log(`[DEBUG] Order saved. New status: "${updatedOrder.status}"`);
 
     // Check if status changed to 'Confirmed'
+    console.log(`[DEBUG] Checking stock update condition: oldStatus="${oldStatus}" vs req.body.status="${req.body.status}"`);
     if (oldStatus !== 'Confirmed' && req.body.status === 'Confirmed') {
+      console.log(`[DEBUG] STOCK UPDATE CONDITION MET - Triggering stock update`);
       // 1. Decrement Stock
       const Product = require('../models/Product');
       for (const item of order.items) { // Use order.items from the fetched order
         console.log(`[Stock Update] Confirming item: ${item.itemName} | Size: ${item.selectedSize} | Qty: ${item.quantity}`);
 
-        if (item.selectedSize) {
-          await Product.findOneAndUpdate(
-            { _id: item.productId, "variants.size": item.selectedSize },
-            { $inc: { "variants.$.stock": -item.quantity } }
-          );
-        } else {
-          await Product.findByIdAndUpdate(
-            item.productId,
-            { $inc: { stock: -item.quantity } }
-          );
+        try {
+          let updateResult;
+          if (item.selectedSize) {
+            // Find the product variant by size and product ID
+            updateResult = await Product.findOneAndUpdate(
+              { _id: item.productId, size: item.selectedSize },
+              { $inc: { stock: -item.quantity } },
+              { new: true }
+            );
+          } else {
+            // Update product without size variant
+            updateResult = await Product.findByIdAndUpdate(
+              item.productId,
+              { $inc: { stock: -item.quantity } },
+              { new: true }
+            );
+          }
+
+          if (!updateResult) {
+            console.error(`[Stock Update Error] Product not found: ${item.productId} | Size: ${item.selectedSize}`);
+            // Continue with other items but log the error
+          } else {
+            console.log(`[Stock Update Success] Updated product: ${updateResult.itemName} | Size: ${updateResult.size || 'N/A'} | New stock: ${updateResult.stock}`);
+          }
+        } catch (stockError) {
+          console.error(`[Stock Update Error] Failed to update stock for item: ${item.itemName} | Error: ${stockError.message}`);
+          // Continue with other items but don't fail the entire order
         }
       }
 
@@ -223,6 +249,8 @@ router.patch('/:id', async (req, res) => {
       const { sendOrderConfirmation } = require('../utils/emailService');
       // Don't await this to keep response fast
       sendOrderConfirmation(updatedOrder).catch(err => console.error('Email trigger fail:', err));
+    } else {
+      console.log(`[DEBUG] Stock update NOT triggered - condition not met`);
     }
 
     res.json(updatedOrder);

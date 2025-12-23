@@ -11,7 +11,7 @@ const router = express.Router();
 // Get all products
 router.get('/', async (req, res) => {
   try {
-    const { category, search, seller, limit } = req.query;
+    const { category, search, seller, limit, group } = req.query;
     let filter = {};
 
     if (category) filter.categoryName = category;
@@ -40,20 +40,72 @@ router.get('/', async (req, res) => {
     const products = await query;
     console.log(`Found ${products.length} products`);
 
-    res.json({ result: products });
+    // Group variants if requested
+    if (group === 'true') {
+      const groupedProducts = groupVariants(products);
+      res.json({ result: groupedProducts });
+    } else {
+      res.json({ result: products });
+    }
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
+// Helper function to group product variants
+function groupVariants(products) {
+  const grouped = {};
+  
+  products.forEach(product => {
+    const key = `${product.itemName}-${product.company}-${product.categoryName}`;
+    
+    if (!grouped[key]) {
+      grouped[key] = {
+        ...product.toObject(),
+        variants: [],
+        minPrice: product.price,
+        maxPrice: product.price,
+        totalStock: 0
+      };
+      delete grouped[key].size;
+      delete grouped[key].stock;
+    }
+    
+    // Add variant info
+    grouped[key].variants.push({
+      _id: product._id,
+      size: product.size,
+      price: product.price,
+      stock: product.stock,
+      discount: product.discount
+    });
+    
+    // Update price range
+    grouped[key].minPrice = Math.min(grouped[key].minPrice, product.price);
+    grouped[key].maxPrice = Math.max(grouped[key].maxPrice, product.price);
+    
+    // Update total stock
+    grouped[key].totalStock += product.stock;
+  });
+  
+  return Object.values(grouped);
+}
+
 // Get latest products
 router.get('/latest', async (req, res) => {
   try {
+    const { group } = req.query;
     const products = await Product.find({ isActive: true })
       .populate('category')
       .sort({ createdAt: -1 })
       .limit(16);
-    res.json({ medicines: products, result: products });
+    
+    if (group === 'true') {
+      const groupedProducts = groupVariants(products);
+      res.json({ medicines: groupedProducts, result: groupedProducts });
+    } else {
+      res.json({ medicines: products, result: products });
+    }
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -103,6 +155,7 @@ router.get('/seller/:email', async (req, res) => {
 // Get all bestseller products
 router.get('/bestsellers', async (req, res) => {
   try {
+    const { group } = req.query;
     const filter = {
       isBestseller: true,
       isActive: true
@@ -112,7 +165,12 @@ router.get('/bestsellers', async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(20);
 
-    res.json({ result: products });
+    if (group === 'true') {
+      const groupedProducts = groupVariants(products);
+      res.json({ result: groupedProducts });
+    } else {
+      res.json({ result: products });
+    }
   } catch (err) {
     console.error('Bestsellers error:', err);
     res.status(500).json({ message: err.message });
@@ -169,6 +227,7 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
     }
 
     const imageId = req.body.imageId || null;
+    const variants = req.body.variants ? JSON.parse(req.body.variants) : [];
 
     const sellerEmail =
       req.body.seller ||
@@ -177,24 +236,22 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
       req.user?.email ||
       (req.user?.admin === true ? 'admin' : null);
 
-    const product = new Product({
+    // Base product data (common to all variants)
+    const baseProductData = {
       itemName: req.body.itemName,
       genericName: req.body.genericName,
       company: req.body.company,
-      category: req.body.category, // ObjectId
+      category: req.body.category,
       categoryName: req.body.categoryName,
       subcategory: req.body.subcategory,
       productType: req.body.productType,
       option: req.body.option,
-      size: req.body.size,
       price: req.body.price,
       discount: req.body.discount || 0,
       image: imageUrl,
       imageUrl: imageUrl,
       imageId: imageId,
       description: req.body.description,
-      stock: req.body.stock,
-      size: req.body.size,
       sellerEmail: sellerEmail,
       dosage: req.body.dosage,
       manufacturer: req.body.manufacturer,
@@ -202,11 +259,48 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
       bestsellerCategory: req.body.bestsellerCategory || null,
       isFreeDelivery: req.body.isFreeDelivery === 'true' || req.body.isFreeDelivery === true,
       skinProblem: req.body.skinProblem,
-      variants: req.body.variants ? JSON.parse(req.body.variants) : []
-    });
+      variants: [] // Keep variants array empty for backward compatibility
+    };
 
-    const savedProduct = await product.save();
-    res.status(201).json(savedProduct);
+    let savedProducts = [];
+    let variantGroupId = null;
+
+    // Generate variantGroupId if this is a variant creation or if variants are provided
+    if (variants.length > 0 || req.body.isVariantMode === 'true') {
+      // If creating variant of existing product, use its variantGroupId or create new one
+      variantGroupId = req.body.variantGroupId || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    if (variants.length > 0) {
+      // Create separate product documents for each variant
+      for (const variant of variants) {
+        const variantProduct = new Product({
+          ...baseProductData,
+          size: variant.size, // Use variant size as the main size
+          price: variant.price || req.body.price, // Use variant price if provided
+          stock: variant.stock, // Use variant stock
+          discount: variant.discount || req.body.discount || 0, // Use variant discount if provided
+          variants: [], // No nested variants for variant products
+          variantGroupId: variantGroupId // Link all variants together
+        });
+
+        const savedVariant = await variantProduct.save();
+        savedProducts.push(savedVariant);
+      }
+    } else {
+      // Single product without variants (or single variant creation)
+      const singleProduct = new Product({
+        ...baseProductData,
+        size: req.body.size,
+        stock: req.body.stock,
+        variantGroupId: variantGroupId // Add variantGroupId if this is part of a variant group
+      });
+
+      const savedSingle = await singleProduct.save();
+      savedProducts.push(savedSingle);
+    }
+
+    res.status(201).json(savedProducts);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -260,11 +354,19 @@ router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), upload.singl
 // Delete product
 router.delete('/:id', requireAuth, requireRole(['seller', 'admin']), async (req, res) => {
   try {
-    const product = await Product.findByIdAndDelete(req.params.id);
+    const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
+    // Delete image from Cloudflare R2 if it exists
+    if (product.imageUrl || product.image) {
+      const { deleteFromCloudflare } = require('../utils/cloudflare');
+      await deleteFromCloudflare(product.imageUrl || product.image);
+    }
 
-    res.json({ message: 'Product deleted' });
+    // Delete product from MongoDB
+    await Product.findByIdAndDelete(req.params.id);
+
+    res.json({ message: 'Product and associated image deleted successfully' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
