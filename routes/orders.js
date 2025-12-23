@@ -180,10 +180,25 @@ router.get('/:email', async (req, res) => {
     // Update product stock
     const Product = require('../models/Product');
     for (const item of items) {
-      await Product.findByIdAndUpdate(
-        item.productId,
-        { $inc: { stock: -item.quantity } }
-      );
+      console.log(`[Stock Update] Processing item: ${item.itemName} | Size: ${item.selectedSize} | Qty: ${item.quantity}`);
+
+      if (item.selectedSize) {
+        // Decrement variant stock
+        const result = await Product.findOneAndUpdate(
+          { _id: item.productId, "variants.size": item.selectedSize },
+          { $inc: { "variants.$.stock": -item.quantity } },
+          { new: true }
+        );
+        console.log(`[Stock Update] Variant update result:`, result ? 'Success' : 'Failed (Product or Variant not found)');
+      } else {
+        // Decrement global stock (fallback)
+        const result = await Product.findByIdAndUpdate(
+          item.productId,
+          { $inc: { stock: -item.quantity } },
+          { new: true }
+        );
+        console.log(`[Stock Update] Global update result:`, result ? 'Success' : 'Failed (Product not found)');
+      }
     }
 
     const savedOrder = await order.save();
