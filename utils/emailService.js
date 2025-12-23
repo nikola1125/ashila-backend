@@ -1,32 +1,29 @@
-const nodemailer = require('nodemailer');
+const Mailjet = require('node-mailjet');
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true, // true for 465, false for other ports
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
+// Initialize Mailjet with API keys
+const mailjet = process.env.MAILJET_API_KEY && process.env.MAILJET_SECRET_KEY
+  ? Mailjet.apiConnect(
+    process.env.MAILJET_API_KEY,
+    process.env.MAILJET_SECRET_KEY
+  )
+  : null;
 
 /**
- * Sends order confirmation email with invoice details.
+ * Sends order confirmation email with invoice details via Mailjet.
  * @param {Object} order - The order object.
  */
 const sendOrderConfirmation = async (order) => {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn('Skipping email: Missing EMAIL_USER or EMAIL_PASS');
+  if (!mailjet) {
+    console.warn('Skipping email: Missing MAILJET_API_KEY or MAILJET_SECRET_KEY');
     return;
   }
 
-  // Items map is now inline
+  if (!process.env.MAILJET_SENDER_EMAIL) {
+    console.warn('Skipping email: Missing MAILJET_SENDER_EMAIL');
+    return;
+  }
 
-  const mailOptions = {
-    from: `"Farmaci Ashila" <${process.env.EMAIL_USER}>`,
-    to: order.buyerEmail,
-    subject: `Order Confirmation #${order.orderNumber}`,
-    html: `
+  const htmlContent = `
       <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333; background-color: #ffffff; border: 1px solid #e0e0e0;">
         <!-- Header -->
         <div style="background-color: #5A3F2A; padding: 30px; text-align: center;">
@@ -124,14 +121,33 @@ const sendOrderConfirmation = async (order) => {
           <p style="margin: 5px 0 0;">This email was sent to ${order.buyerEmail}</p>
         </div>
       </div>
-    `
-  };
+    `;
 
   try {
-    await transporter.sendMail(mailOptions);
+    const result = await mailjet
+      .post("send", { 'version': 'v3.1' })
+      .request({
+        "Messages": [
+          {
+            "From": {
+              "Email": process.env.MAILJET_SENDER_EMAIL,
+              "Name": "Farmaci Ashila"
+            },
+            "To": [
+              {
+                "Email": order.buyerEmail,
+                "Name": order.buyerName || "Customer"
+              }
+            ],
+            "Subject": `Order Confirmation #${order.orderNumber}`,
+            "HTMLPart": htmlContent,
+          }
+        ]
+      });
+
     console.log(`Confirmation email sent to ${order.buyerEmail}`);
   } catch (error) {
-    console.error('Error sending email:', error);
+    console.error('Error sending email via Mailjet:', error.statusCode, error.message);
   }
 };
 

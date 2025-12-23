@@ -81,44 +81,58 @@ app.get('/health', (req, res) => {
 });
 
 // DEBUG EMAIL ENDPOINT
+// DEBUG EMAIL ENDPOINT (MAILJET)
 app.get('/debug-email', async (req, res) => {
-  const nodemailer = require('nodemailer');
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
+  const Mailjet = require('node-mailjet');
+  const apiKey = process.env.MAILJET_API_KEY;
+  const secretKey = process.env.MAILJET_SECRET_KEY;
+  const senderEmail = process.env.MAILJET_SENDER_EMAIL;
 
-  if (!user || !pass) {
+  if (!apiKey || !secretKey || !senderEmail) {
     return res.status(500).json({
       success: false,
-      message: 'EMAIL_USER or EMAIL_PASS environment variables are missing!',
+      message: 'Missing Mailjet Environment Variables!',
       env: {
-        EMAIL_USER_EXISTS: !!user,
-        EMAIL_PASS_EXISTS: !!pass,
-        EMAIL_USER_VALUE: user ? user.length + ' chars' : 'null'
+        MAILJET_API_KEY_EXISTS: !!apiKey,
+        MAILJET_SECRET_KEY_EXISTS: !!secretKey,
+        MAILJET_SENDER_EMAIL: senderEmail || 'missing'
       }
     });
   }
 
-  const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: { user, pass }
-  });
+  const mailjet = Mailjet.apiConnect(apiKey, secretKey);
 
   try {
-    const info = await transporter.sendMail({
-      from: user,
-      to: user, // Send to yourself
-      subject: 'Debug Email Test from Render',
-      text: 'If you see this, your Render email configuration is working perfectly!',
-    });
-    res.json({ success: true, message: 'Email sent successfully!', messageId: info.messageId });
+    const result = await mailjet
+      .post("send", { 'version': 'v3.1' })
+      .request({
+        "Messages": [
+          {
+            "From": {
+              "Email": senderEmail,
+              "Name": "Farmaci Ashila Debug"
+            },
+            "To": [
+              {
+                "Email": senderEmail, // Send to sender for safety/verification
+                "Name": "Admin"
+              }
+            ],
+            "Subject": "Mailjet Integration Success - Farmaci Ashila",
+            "TextPart": "If you are reading this, your Render backend is successfully connected to Mailjet!",
+            "HTMLPart": "<h3>Mailjet Works!</h3><p>Your backend can now send emails without SMTP blocking.</p>",
+          }
+        ]
+      });
+
+    res.json({ success: true, message: 'Email sent successfully via Mailjet!', data: result.body });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Email sending failed',
-      error: error.message,
-      stack: error.stack
+      message: 'Mailjet API Error',
+      statusCode: error.statusCode,
+      errorMessage: error.message,
+      details: error.response ? error.response.body : 'No details'
     });
   }
 });
