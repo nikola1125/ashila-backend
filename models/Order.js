@@ -22,7 +22,8 @@ const orderSchema = new mongoose.Schema({
     discount: Number,
     image: String,
     seller: String,
-    sellerEmail: String
+    sellerEmail: String,
+    selectedSize: String
   }],
   totalPrice: {
     type: Number,

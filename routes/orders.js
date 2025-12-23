@@ -177,29 +177,7 @@ router.get('/:email', async (req, res) => {
       status: status || 'Pending'
     });
 
-    // Update product stock
-    const Product = require('../models/Product');
-    for (const item of items) {
-      console.log(`[Stock Update] Processing item: ${item.itemName} | Size: ${item.selectedSize} | Qty: ${item.quantity}`);
-
-      if (item.selectedSize) {
-        // Decrement variant stock
-        const result = await Product.findOneAndUpdate(
-          { _id: item.productId, "variants.size": item.selectedSize },
-          { $inc: { "variants.$.stock": -item.quantity } },
-          { new: true }
-        );
-        console.log(`[Stock Update] Variant update result:`, result ? 'Success' : 'Failed (Product or Variant not found)');
-      } else {
-        // Decrement global stock (fallback)
-        const result = await Product.findByIdAndUpdate(
-          item.productId,
-          { $inc: { stock: -item.quantity } },
-          { new: true }
-        );
-        console.log(`[Stock Update] Global update result:`, result ? 'Success' : 'Failed (Product not found)');
-      }
-    }
+    // Stock update removed from here. will be handled on confirmation.
 
     const savedOrder = await order.save();
     res.status(201).json(savedOrder);
@@ -223,7 +201,25 @@ router.patch('/:id', async (req, res) => {
 
     // Check if status changed to 'Confirmed'
     if (oldStatus !== 'Confirmed' && req.body.status === 'Confirmed') {
-      // Send confirmation email
+      // 1. Decrement Stock
+      const Product = require('../models/Product');
+      for (const item of order.items) { // Use order.items from the fetched order
+        console.log(`[Stock Update] Confirming item: ${item.itemName} | Size: ${item.selectedSize} | Qty: ${item.quantity}`);
+
+        if (item.selectedSize) {
+          await Product.findOneAndUpdate(
+            { _id: item.productId, "variants.size": item.selectedSize },
+            { $inc: { "variants.$.stock": -item.quantity } }
+          );
+        } else {
+          await Product.findByIdAndUpdate(
+            item.productId,
+            { $inc: { stock: -item.quantity } }
+          );
+        }
+      }
+
+      // 2. Send confirmation email
       const { sendOrderConfirmation } = require('../utils/emailService');
       // Don't await this to keep response fast
       sendOrderConfirmation(updatedOrder).catch(err => console.error('Email trigger fail:', err));
