@@ -50,6 +50,10 @@ if (!connectionString.endsWith('/') && !connectionString.includes('?')) {
 mongoose.connect(connectionString, {
   serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
   socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+  maxPoolSize: 50, // Maintain up to 50 socket connections
+  minPoolSize: 5, // Maintain at least 5 socket connections
+  maxIdleTimeMS: 30000, // Close connections after 30s of inactivity
+  retryWrites: true, // Retry write operations on network errors
 })
   .then(() => {
     console.log('✓ MongoDB connected successfully');

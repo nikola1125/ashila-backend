@@ -5,9 +5,12 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 
-// Generate order number
+// Generate order number with better collision prevention
 const generateOrderNumber = () => {
-  return 'ORD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substr(2, 9);
+  const processId = process.pid.toString(36).substr(0, 4);
+  return `ORD-${timestamp}-${random}-${processId}`;
 };
 
 // --- ANALYTICS ENDPOINTS (Must be before dynamic routes) ---
@@ -149,11 +152,9 @@ router.get('/:email', async (req, res) => {
 
     const SHIPPING_COST = 300; // Fixed delivery fee
 
-    // Validate stock for each item
+    // Validate stock for each item - parallel processing for better performance
     const Product = require('../models/Product');
-    const insufficientStockItems = [];
-
-    for (const item of items) {
+    const stockChecks = items.map(async (item) => {
       try {
         let product;
         
@@ -169,36 +170,41 @@ router.get('/:email', async (req, res) => {
         }
 
         if (!product) {
-          insufficientStockItems.push({
+          return {
             itemName: item.itemName || 'Unknown Product',
             requestedQuantity: item.quantity,
             availableStock: 0,
             selectedSize: item.selectedSize || null
-          });
-          continue;
+          };
         }
 
         const availableStock = Number(product.stock) || 0;
         const requestedQuantity = Number(item.quantity) || 0;
 
         if (requestedQuantity > availableStock) {
-          insufficientStockItems.push({
+          return {
             itemName: item.itemName || product.itemName,
             requestedQuantity: requestedQuantity,
             availableStock: availableStock,
             selectedSize: item.selectedSize || product.size || null
-          });
+          };
         }
+        
+        return null; // Stock is sufficient
       } catch (productError) {
         console.error(`Error checking stock for product ${item.productId}:`, productError);
-        insufficientStockItems.push({
+        return {
           itemName: item.itemName || 'Unknown Product',
           requestedQuantity: item.quantity,
           availableStock: 0,
           selectedSize: item.selectedSize || null
-        });
+        };
       }
-    }
+    });
+
+    // Wait for all stock checks to complete in parallel
+    const stockCheckResults = await Promise.all(stockChecks);
+    const insufficientStockItems = stockCheckResults.filter(result => result !== null);
 
     // If any items have insufficient stock, return error with details
     if (insufficientStockItems.length > 0) {

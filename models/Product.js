@@ -95,4 +95,14 @@ const productSchema = new mongoose.Schema({
   }
 });
 
+// Add indexes for better query performance
+productSchema.index({ itemName: 1 });
+productSchema.index({ categoryName: 1 });
+productSchema.index({ variantGroupId: 1 });
+productSchema.index({ seller: 1 });
+productSchema.index({ stock: 1 });
+productSchema.index({ isActive: 1 });
+productSchema.index({ isBestseller: 1 });
+productSchema.index({ size: 1 }); // For variant queries
+
 module.exports = mongoose.model('Product', productSchema);
