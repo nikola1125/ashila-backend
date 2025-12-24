@@ -4,8 +4,12 @@ require('express-async-errors');
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
+
+// If behind a proxy/load balancer (Render/NGINX), enable correct IP detection
+app.set('trust proxy', 1);
 
 // Middleware
 // Enhanced CORS for mobile and multiple origins
@@ -27,6 +31,30 @@ app.use(cors({
 // Body parsing with mobile-friendly limits
 app.use(express.json({ limit: '10mb' })); // Reduced from 50mb for mobile
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// Rate limiting
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const ordersLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(generalLimiter);
 
 // Connect to MongoDB
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -74,9 +102,9 @@ app.use('/users', require('./routes/users'));
 app.use('/categories', require('./routes/categories'));
 app.use('/medicines', require('./routes/products'));
 app.use('/products', require('./routes/products'));
-app.use('/orders', require('./routes/orders'));
+app.use('/orders', ordersLimiter, require('./routes/orders'));
 app.use('/reviews', require('./routes/reviews'));
-app.use('/admin', require('./routes/adminAuth'));
+app.use('/admin', adminLimiter, require('./routes/adminAuth'));
 app.use('/settings', require('./routes/settings'));
 
 // Health check

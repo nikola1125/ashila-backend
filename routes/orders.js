@@ -4,6 +4,7 @@ const router = express.Router();
 const Order = require('../models/Order');
 const User = require('../models/User');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const mongoose = require('mongoose');
 
 // Generate order number with better collision prevention
 const generateOrderNumber = () => {
@@ -252,75 +253,115 @@ router.get('/:email', async (req, res) => {
   }
 });
 
-// Update order status (admin/seller)
-router.patch('/:id', async (req, res) => {
+// Update order status (admin)
+router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     console.log(`[DEBUG] Order status update request for ID: ${req.params.id}`);
     console.log(`[DEBUG] Request body:`, req.body);
-    
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ message: 'Order not found' });
 
-    const oldStatus = order.status;
-    console.log(`[DEBUG] Current order status: "${oldStatus}"`);
-    console.log(`[DEBUG] New status from request: "${req.body.status}"`);
+    const Product = require('../models/Product');
+    const orderId = req.params.id;
+    const nextStatus = req.body?.status;
 
-    Object.assign(order, req.body);
-    order.updatedAt = Date.now();
-    const updatedOrder = await order.save();
-    
-    console.log(`[DEBUG] Order saved. New status: "${updatedOrder.status}"`);
+    const isTxnUnsupportedError = (err) => {
+      const msg = String(err?.message || '');
+      return (
+        err?.code === 20 ||
+        msg.includes('Transaction numbers are only allowed on a replica set') ||
+        msg.includes('replica set') ||
+        msg.includes('Transaction')
+      );
+    };
 
-    // Check if status changed to 'Confirmed'
-    console.log(`[DEBUG] Checking stock update condition: oldStatus="${oldStatus}" vs req.body.status="${req.body.status}"`);
-    if (oldStatus !== 'Confirmed' && req.body.status === 'Confirmed') {
-      console.log(`[DEBUG] STOCK UPDATE CONDITION MET - Triggering stock update`);
-      // 1. Decrement Stock
-      const Product = require('../models/Product');
-      for (const item of order.items) { // Use order.items from the fetched order
-        console.log(`[Stock Update] Confirming item: ${item.itemName} | Size: ${item.selectedSize} | Qty: ${item.quantity}`);
-
-        try {
-          let updateResult;
-          if (item.selectedSize) {
-            // Find the product variant by size and product ID
-            updateResult = await Product.findOneAndUpdate(
-              { _id: item.productId, size: item.selectedSize },
-              { $inc: { stock: -item.quantity } },
-              { new: true }
-            );
-          } else {
-            // Update product without size variant
-            updateResult = await Product.findByIdAndUpdate(
-              item.productId,
-              { $inc: { stock: -item.quantity } },
-              { new: true }
-            );
-          }
-
-          if (!updateResult) {
-            console.error(`[Stock Update Error] Product not found: ${item.productId} | Size: ${item.selectedSize}`);
-            // Continue with other items but log the error
-          } else {
-            console.log(`[Stock Update Success] Updated product: ${updateResult.itemName} | Size: ${updateResult.size || 'N/A'} | New stock: ${updateResult.stock}`);
-          }
-        } catch (stockError) {
-          console.error(`[Stock Update Error] Failed to update stock for item: ${item.itemName} | Error: ${stockError.message}`);
-          // Continue with other items but don't fail the entire order
-        }
+    const runUpdate = async (session) => {
+      const order = await Order.findById(orderId).session(session || null);
+      if (!order) {
+        const e = new Error('Order not found');
+        e.status = 404;
+        throw e;
       }
 
-      // 2. Send confirmation email
+      const oldStatus = order.status;
+      console.log(`[DEBUG] Current order status: "${oldStatus}"`);
+      console.log(`[DEBUG] New status from request: "${nextStatus}"`);
+
+      Object.assign(order, req.body);
+      order.updatedAt = Date.now();
+      const updatedOrder = await order.save({ session });
+      console.log(`[DEBUG] Order saved. New status: "${updatedOrder.status}"`);
+
+      // Only decrement stock when moving into Confirmed
+      console.log(`[DEBUG] Checking stock update condition: oldStatus="${oldStatus}" vs nextStatus="${nextStatus}"`);
+      if (oldStatus !== 'Confirmed' && nextStatus === 'Confirmed') {
+        console.log(`[DEBUG] STOCK UPDATE CONDITION MET - Triggering stock update`);
+
+        for (const item of updatedOrder.items) {
+          const qty = Number(item.quantity) || 0;
+          if (qty <= 0) continue;
+
+          console.log(`[Stock Update] Confirming item: ${item.itemName} | Size: ${item.selectedSize} | Qty: ${qty}`);
+
+          const query = item.selectedSize
+            ? { _id: item.productId, size: item.selectedSize, stock: { $gte: qty } }
+            : { _id: item.productId, stock: { $gte: qty } };
+
+          const updateResult = await Product.findOneAndUpdate(
+            query,
+            { $inc: { stock: -qty } },
+            { new: true, session }
+          );
+
+          if (!updateResult) {
+            const e = new Error(`Insufficient stock or product not found for: ${item.itemName || item.productId}`);
+            e.status = 400;
+            throw e;
+          }
+        }
+      } else {
+        console.log(`[DEBUG] Stock update NOT triggered - condition not met`);
+      }
+
+      return { updatedOrder, oldStatus };
+    };
+
+    let updatedOrder;
+    let oldStatus;
+
+    const session = await mongoose.startSession();
+    try {
+      const result = await session.withTransaction(async () => {
+        const r = await runUpdate(session);
+        updatedOrder = r.updatedOrder;
+        oldStatus = r.oldStatus;
+        return true;
+      });
+
+      if (!result) {
+        throw new Error('Transaction aborted');
+      }
+    } catch (err) {
+      // If transactions aren't supported (non-replica set), fallback to non-transactional behavior
+      if (isTxnUnsupportedError(err)) {
+        console.warn('[WARN] MongoDB transactions unavailable. Falling back to non-transactional order confirmation.');
+        const r = await runUpdate(undefined);
+        updatedOrder = r.updatedOrder;
+        oldStatus = r.oldStatus;
+      } else {
+        throw err;
+      }
+    } finally {
+      await session.endSession();
+    }
+
+    // Send confirmation email after DB changes succeed
+    if (oldStatus !== 'Confirmed' && nextStatus === 'Confirmed') {
       const { sendOrderConfirmation } = require('../utils/emailService');
-      // Don't await this to keep response fast
       sendOrderConfirmation(updatedOrder).catch(err => console.error('Email trigger fail:', err));
-    } else {
-      console.log(`[DEBUG] Stock update NOT triggered - condition not met`);
     }
 
     res.json(updatedOrder);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(err.status || 400).json({ message: err.message });
   }
 });
 
