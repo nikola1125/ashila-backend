@@ -149,6 +149,65 @@ router.get('/:email', async (req, res) => {
 
     const SHIPPING_COST = 300; // Fixed delivery fee
 
+    // Validate stock for each item
+    const Product = require('../models/Product');
+    const insufficientStockItems = [];
+
+    for (const item of items) {
+      try {
+        let product;
+        
+        // If item has selectedSize, find product by ID and size
+        if (item.selectedSize) {
+          product = await Product.findOne({ 
+            _id: item.productId, 
+            size: item.selectedSize 
+          });
+        } else {
+          // Find product by ID only
+          product = await Product.findById(item.productId);
+        }
+
+        if (!product) {
+          insufficientStockItems.push({
+            itemName: item.itemName || 'Unknown Product',
+            requestedQuantity: item.quantity,
+            availableStock: 0,
+            selectedSize: item.selectedSize || null
+          });
+          continue;
+        }
+
+        const availableStock = Number(product.stock) || 0;
+        const requestedQuantity = Number(item.quantity) || 0;
+
+        if (requestedQuantity > availableStock) {
+          insufficientStockItems.push({
+            itemName: item.itemName || product.itemName,
+            requestedQuantity: requestedQuantity,
+            availableStock: availableStock,
+            selectedSize: item.selectedSize || product.size || null
+          });
+        }
+      } catch (productError) {
+        console.error(`Error checking stock for product ${item.productId}:`, productError);
+        insufficientStockItems.push({
+          itemName: item.itemName || 'Unknown Product',
+          requestedQuantity: item.quantity,
+          availableStock: 0,
+          selectedSize: item.selectedSize || null
+        });
+      }
+    }
+
+    // If any items have insufficient stock, return error with details
+    if (insufficientStockItems.length > 0) {
+      return res.status(400).json({
+        message: 'Nuk ka mjaftueshem stok për disa produkte',
+        insufficientStockItems: insufficientStockItems
+      });
+    }
+
     let totalPrice = 0;
     let discountAmount = 0;
 
