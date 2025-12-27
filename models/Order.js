@@ -73,7 +73,6 @@ const orderSchema = new mongoose.Schema({
 
 // Add indexes for better query performance
 orderSchema.index({ buyerEmail: 1 });
-orderSchema.index({ orderNumber: 1 }, { unique: true });
 orderSchema.index({ status: 1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ 'items.productId': 1 });
