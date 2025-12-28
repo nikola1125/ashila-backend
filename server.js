@@ -5,8 +5,16 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
+const SimpleCache = require('./utils/cache');
+const healthRoutes = require('./utils/healthRoutes');
 
 const app = express();
+
+// Initialize cache
+const cache = new SimpleCache(5 * 60 * 1000); // 5 minutes
+
+// Make cache available globally
+app.locals.cache = cache;
 
 // If behind a proxy/load balancer (Render/NGINX), enable correct IP detection
 app.set('trust proxy', 1);
@@ -97,7 +105,10 @@ mongoose.connect(connectionString, {
     process.exit(1);
   });
 
-// Routes
+// Health check routes (very lightweight)
+app.use('/api', healthRoutes);
+
+// API Routes
 app.use('/users', require('./routes/users'));
 app.use('/categories', require('./routes/categories'));
 app.use('/medicines', require('./routes/products'));
