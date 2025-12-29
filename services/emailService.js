@@ -1,8 +1,28 @@
-const mailjet = require('node-mailjet');
-const client = mailjet.connect(
-  process.env.MAILJET_API_KEY,
-  process.env.MAILJET_SECRET_KEY
-);
+const Mailjet = require('node-mailjet');
+const nodemailer = require('nodemailer');
+
+let client;
+try {
+  client = new Mailjet({
+    apiKey: process.env.MAILJET_API_KEY,
+    apiSecret: process.env.MAILJET_SECRET_KEY
+  });
+  console.log('Mailjet initialized successfully');
+} catch (error) {
+  console.log('Mailjet failed to initialize, falling back to nodemailer:', error.message);
+  client = null;
+}
+
+// Fallback OVH SMTP transporter
+const smtpTransporter = nodemailer.createTransport({
+  host: 'ssl0.ovh.net',
+  port: 465,
+  secure: true,
+  auth: {
+    user: process.env.EMAIL_USER || 'noreply@farmaciashila.com',
+    pass: process.env.EMAIL_PASSWORD
+  }
+});
 
 class EmailService {
   constructor() {
@@ -11,17 +31,31 @@ class EmailService {
 
   async sendWelcomeEmail(userEmail, userName) {
     try {
-      const result = await client.post('send', { version: 'v3.1' }).request({
-        Messages: [{
-          From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
-          To: [{ Email: userEmail, Name: userName }],
-          ReplyTo: { Email: this.senderEmail, Name: 'Farmacia Shila' },
-          Subject: 'Mirësevjen te Farmaci Ashila',
-          HTMLContent: this.getWelcomeTemplate(userName)
-        }]
-      });
+      let result;
+      
+      if (client) {
+        // Try Mailjet first
+        result = await client.post('send', { version: 'v3.1' }).request({
+          Messages: [{
+            From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
+            To: [{ Email: userEmail, Name: userName }],
+            ReplyTo: { Email: this.senderEmail, Name: 'Farmacia Shila' },
+            Subject: 'Mirësevjen te Farmaci Ashila',
+            HTMLContent: this.getWelcomeTemplate(userName)
+          }]
+        });
+      } else {
+        // Fallback to SMTP
+        result = await smtpTransporter.sendMail({
+          from: `"Farmacia Shila" <${this.senderEmail}>`,
+          to: userEmail,
+          replyTo: `"Farmacia Shila" <${this.senderEmail}>`,
+          subject: 'Mirësevjen te Farmaci Ashila',
+          html: this.getWelcomeTemplate(userName)
+        });
+      }
 
-      console.log('Welcome email sent:', result.body);
+      console.log('Welcome email sent:', result.body || result.messageId);
       return result;
     } catch (error) {
       console.error('Error sending welcome email:', error);
@@ -31,17 +65,31 @@ class EmailService {
 
   async sendOrderConfirmation(userEmail, orderDetails) {
     try {
-      const result = await client.post('send', { version: 'v3.1' }).request({
-        Messages: [{
-          From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
-          To: [{ Email: userEmail, Name: orderDetails.buyerName || 'Customer' }],
-          ReplyTo: { Email: this.senderEmail, Name: 'Farmacia Shila' },
-          Subject: 'Konfirmim Porosie - Farmaci Ashila',
-          HTMLContent: this.getOrderConfirmationTemplate(orderDetails)
-        }]
-      });
+      let result;
+      
+      if (client) {
+        // Try Mailjet first
+        result = await client.post('send', { version: 'v3.1' }).request({
+          Messages: [{
+            From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
+            To: [{ Email: userEmail, Name: orderDetails.buyerName || 'Customer' }],
+            ReplyTo: { Email: this.senderEmail, Name: 'Farmacia Shila' },
+            Subject: 'Konfirmim Porosie - Farmaci Ashila',
+            HTMLContent: this.getOrderConfirmationTemplate(orderDetails)
+          }]
+        });
+      } else {
+        // Fallback to SMTP
+        result = await smtpTransporter.sendMail({
+          from: `"Farmacia Shila" <${this.senderEmail}>`,
+          to: userEmail,
+          replyTo: `"Farmacia Shila" <${this.senderEmail}>`,
+          subject: 'Konfirmim Porosie - Farmaci Ashila',
+          html: this.getOrderConfirmationTemplate(orderDetails)
+        });
+      }
 
-      console.log('Order confirmation sent:', result.body);
+      console.log('Order confirmation sent:', result.body || result.messageId);
       return result;
     } catch (error) {
       console.error('Error sending order confirmation:', error);
@@ -52,18 +100,31 @@ class EmailService {
   async sendPasswordReset(userEmail, resetToken) {
     try {
       const resetLink = `https://www.farmaciashila.com/reset-password?token=${resetToken}`;
+      let result;
       
-      const result = await client.post('send', { version: 'v3.1' }).request({
-        Messages: [{
-          From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
-          To: [{ Email: userEmail }],
-          ReplyTo: { Email: this.senderEmail, Name: 'Farmacia Shila' },
-          Subject: 'Rivendos Fjalëkalimin - Farmaci Ashila',
-          HTMLContent: this.getPasswordResetTemplate(resetLink)
-        }]
-      });
+      if (client) {
+        // Try Mailjet first
+        result = await client.post('send', { version: 'v3.1' }).request({
+          Messages: [{
+            From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
+            To: [{ Email: userEmail }],
+            ReplyTo: { Email: this.senderEmail, Name: 'Farmacia Shila' },
+            Subject: 'Rivendos Fjalëkalimin - Farmaci Ashila',
+            HTMLContent: this.getPasswordResetTemplate(resetLink)
+          }]
+        });
+      } else {
+        // Fallback to SMTP
+        result = await smtpTransporter.sendMail({
+          from: `"Farmacia Shila" <${this.senderEmail}>`,
+          to: userEmail,
+          replyTo: `"Farmacia Shila" <${this.senderEmail}>`,
+          subject: 'Rivendos Fjalëkalimin - Farmaci Ashila',
+          html: this.getPasswordResetTemplate(resetLink)
+        });
+      }
 
-      console.log('Password reset email sent:', result.body);
+      console.log('Password reset email sent:', result.body || result.messageId);
       return result;
     } catch (error) {
       console.error('Error sending password reset email:', error);

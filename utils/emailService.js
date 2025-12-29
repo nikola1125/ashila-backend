@@ -1,8 +1,8 @@
-const mailjet = require('node-mailjet');
-const client = mailjet.connect(
-  process.env.MAILJET_API_KEY,
-  process.env.MAILJET_SECRET_KEY
-);
+const Mailjet = require('node-mailjet');
+const client = new Mailjet({
+  apiKey: process.env.MAILJET_API_KEY,
+  apiSecret: process.env.MAILJET_SECRET_KEY
+});
 
 /**
  * Sends order confirmation email with invoice details via Mailjet.
