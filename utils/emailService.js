@@ -1,4 +1,5 @@
-const mailjet = require('node-mailjet').connect(
+const mailjet = require('node-mailjet');
+const client = mailjet.connect(
   process.env.MAILJET_API_KEY,
   process.env.MAILJET_SECRET_KEY
 );
@@ -109,7 +110,7 @@ const sendOrderConfirmation = async (order) => {
     `;
 
   try {
-    const result = await mailjet.post('send', { version: 'v3.1' }).request({
+    const result = await client.post('send', { version: 'v3.1' }).request({
       Messages: [{
         From: { Email: process.env.MAILJET_SENDER_EMAIL || 'noreply@farmaciashila.com', Name: 'Farmacia Shila' },
         To: [{ Email: order.buyerEmail, Name: order.buyerName || 'Customer' }],

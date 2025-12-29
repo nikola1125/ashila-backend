@@ -1,4 +1,5 @@
-const mailjet = require('node-mailjet').connect(
+const mailjet = require('node-mailjet');
+const client = mailjet.connect(
   process.env.MAILJET_API_KEY,
   process.env.MAILJET_SECRET_KEY
 );
@@ -10,7 +11,7 @@ class EmailService {
 
   async sendWelcomeEmail(userEmail, userName) {
     try {
-      const result = await mailjet.post('send', { version: 'v3.1' }).request({
+      const result = await client.post('send', { version: 'v3.1' }).request({
         Messages: [{
           From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
           To: [{ Email: userEmail, Name: userName }],
@@ -30,7 +31,7 @@ class EmailService {
 
   async sendOrderConfirmation(userEmail, orderDetails) {
     try {
-      const result = await mailjet.post('send', { version: 'v3.1' }).request({
+      const result = await client.post('send', { version: 'v3.1' }).request({
         Messages: [{
           From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
           To: [{ Email: userEmail, Name: orderDetails.buyerName || 'Customer' }],
@@ -52,7 +53,7 @@ class EmailService {
     try {
       const resetLink = `https://www.farmaciashila.com/reset-password?token=${resetToken}`;
       
-      const result = await mailjet.post('send', { version: 'v3.1' }).request({
+      const result = await client.post('send', { version: 'v3.1' }).request({
         Messages: [{
           From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
           To: [{ Email: userEmail }],
