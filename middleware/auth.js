@@ -4,13 +4,23 @@ const jwt = require('jsonwebtoken');
 
 const tryVerifyAdminJwt = (token) => {
   const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret) return null;
+  if (!jwtSecret) {
+    console.log('[Auth Debug] JWT_SECRET not found');
+    return null;
+  }
 
   try {
+    console.log('[Auth Debug] Attempting to verify admin JWT...');
     const decoded = jwt.verify(token, jwtSecret, { issuer: 'medi-mart' });
-    if (decoded?.typ !== 'admin') return null;
+    console.log('[Auth Debug] JWT decoded successfully:', decoded);
+    if (decoded?.typ !== 'admin') {
+      console.log('[Auth Debug] JWT is not admin type, typ:', decoded?.typ);
+      return null;
+    }
+    console.log('[Auth Debug] Admin JWT verified successfully');
     return decoded;
-  } catch {
+  } catch (err) {
+    console.log('[Auth Debug] Admin JWT verification failed:', err.message);
     return null;
   }
 };
@@ -27,6 +37,14 @@ const requireAuth = async (req, res, next) => {
     // 1) Try admin JWT (username/password login)
     console.log('[Auth URL]', req.originalUrl); // Debug: Print which URL is being accessed
     console.log('[Auth Token]', token.substring(0, 20) + '...'); // Debug: Print first 20 chars of token
+    
+    // Debug: Try to decode without verification to see the payload
+    try {
+      const decodedWithoutVerification = jwt.decode(token);
+      console.log('[Auth Debug] Token payload (no verification):', decodedWithoutVerification);
+    } catch (err) {
+      console.log('[Auth Debug] Failed to decode token payload:', err.message);
+    }
 
     const adminDecoded = tryVerifyAdminJwt(token);
     if (adminDecoded) {
