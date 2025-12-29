@@ -26,7 +26,8 @@ const allowedOrigins = process.env.FRONTEND_URL
   : [
     'http://localhost:5173',
     'http://localhost:3000',
-    'https://ashilafarmaci.netlify.app' // Production Netlify domain
+    'https://ashilafarmaci.netlify.app', // Production Netlify domain
+    'https://www.farmaciashila.com' // OVH domain
   ];
 
 app.use(cors({
