@@ -1,26 +1,13 @@
-const nodemailer = require('nodemailer');
-
-// Initialize OVH email transporter - Production Safe
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'ssl0.ovh.net',
-  port: process.env.SMTP_PORT || 465,
-  secure: true, // MUST be true for production-safe SSL
-  auth: {
-    user: process.env.EMAIL_USER || 'support@farmaciashila.com',
-    pass: process.env.EMAIL_PASSWORD
-  }
-});
+const mailjet = require('node-mailjet').connect(
+  process.env.MAILJET_API_KEY,
+  process.env.MAILJET_SECRET_KEY
+);
 
 /**
- * Sends order confirmation email with invoice details via OVH email.
+ * Sends order confirmation email with invoice details via Mailjet.
  * @param {Object} order - The order object.
  */
 const sendOrderConfirmation = async (order) => {
-  if (!transporter) {
-    console.warn('Skipping email: Email transporter not initialized');
-    return;
-  }
-
   const htmlContent = `
       <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333; background-color: #ffffff; border: 1px solid #e0e0e0;">
         <!-- Header -->
@@ -122,17 +109,19 @@ const sendOrderConfirmation = async (order) => {
     `;
 
   try {
-    const result = await transporter.sendMail({
-      from: `"Farmacia Shila" <${process.env.EMAIL_USER || 'support@farmaciashila.com'}>`,
-      to: order.buyerEmail,
-      replyTo: `"Farmacia Shila" <${process.env.EMAIL_USER || 'support@farmaciashila.com'}>`,
-      subject: `Order Confirmation #${order.orderNumber}`,
-      html: htmlContent
+    const result = await mailjet.post('send', { version: 'v3.1' }).request({
+      Messages: [{
+        From: { Email: process.env.MAILJET_SENDER_EMAIL || 'noreply@farmaciashila.com', Name: 'Farmacia Shila' },
+        To: [{ Email: order.buyerEmail, Name: order.buyerName || 'Customer' }],
+        ReplyTo: { Email: process.env.MAILJET_SENDER_EMAIL || 'noreply@farmaciashila.com', Name: 'Farmacia Shila' },
+        Subject: `Order Confirmation #${order.orderNumber}`,
+        HTMLContent: htmlContent
+      }]
     });
 
     console.log(`Confirmation email sent to ${order.buyerEmail}`);
   } catch (error) {
-    console.error('Error sending email via OVH:', error);
+    console.error('Error sending email via Mailjet:', error);
   }
 };
 

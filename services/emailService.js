@@ -1,35 +1,26 @@
-const nodemailer = require('nodemailer');
+const mailjet = require('node-mailjet').connect(
+  process.env.MAILJET_API_KEY,
+  process.env.MAILJET_SECRET_KEY
+);
 
 class EmailService {
   constructor() {
-    this.transporter = null;
-    this.initializeTransporter();
-  }
-
-  initializeTransporter() {
-    this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'ssl0.ovh.net',
-      port: process.env.SMTP_PORT || 465,
-      secure: true, // MUST be true for production-safe SSL
-      auth: {
-        user: process.env.EMAIL_USER || 'support@farmaciashila.com',
-        pass: process.env.EMAIL_PASSWORD
-      }
-    });
+    this.senderEmail = process.env.MAILJET_SENDER_EMAIL || 'noreply@farmaciashila.com';
   }
 
   async sendWelcomeEmail(userEmail, userName) {
     try {
-      const mailOptions = {
-        from: `"Farmacia Shila" <${process.env.EMAIL_USER || 'support@farmaciashila.com'}>`,
-        to: userEmail,
-        replyTo: `"Farmacia Shila" <${process.env.EMAIL_USER || 'support@farmaciashila.com'}>`,
-        subject: 'Mirësevjen te Farmaci Ashila',
-        html: this.getWelcomeTemplate(userName)
-      };
+      const result = await mailjet.post('send', { version: 'v3.1' }).request({
+        Messages: [{
+          From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
+          To: [{ Email: userEmail, Name: userName }],
+          ReplyTo: { Email: this.senderEmail, Name: 'Farmacia Shila' },
+          Subject: 'Mirësevjen te Farmaci Ashila',
+          HTMLContent: this.getWelcomeTemplate(userName)
+        }]
+      });
 
-      const result = await this.transporter.sendMail(mailOptions);
-      console.log('Welcome email sent:', result.messageId);
+      console.log('Welcome email sent:', result.body);
       return result;
     } catch (error) {
       console.error('Error sending welcome email:', error);
@@ -39,16 +30,17 @@ class EmailService {
 
   async sendOrderConfirmation(userEmail, orderDetails) {
     try {
-      const mailOptions = {
-        from: `"Farmacia Shila" <${process.env.EMAIL_USER || 'support@farmaciashila.com'}>`,
-        to: userEmail,
-        replyTo: `"Farmacia Shila" <${process.env.EMAIL_USER || 'support@farmaciashila.com'}>`,
-        subject: 'Konfirmim Porosie - Farmaci Ashila',
-        html: this.getOrderConfirmationTemplate(orderDetails)
-      };
+      const result = await mailjet.post('send', { version: 'v3.1' }).request({
+        Messages: [{
+          From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
+          To: [{ Email: userEmail, Name: orderDetails.buyerName || 'Customer' }],
+          ReplyTo: { Email: this.senderEmail, Name: 'Farmacia Shila' },
+          Subject: 'Konfirmim Porosie - Farmaci Ashila',
+          HTMLContent: this.getOrderConfirmationTemplate(orderDetails)
+        }]
+      });
 
-      const result = await this.transporter.sendMail(mailOptions);
-      console.log('Order confirmation sent:', result.messageId);
+      console.log('Order confirmation sent:', result.body);
       return result;
     } catch (error) {
       console.error('Error sending order confirmation:', error);
@@ -60,16 +52,17 @@ class EmailService {
     try {
       const resetLink = `https://www.farmaciashila.com/reset-password?token=${resetToken}`;
       
-      const mailOptions = {
-        from: `"Farmacia Shila" <${process.env.EMAIL_USER || 'support@farmaciashila.com'}>`,
-        to: userEmail,
-        replyTo: `"Farmacia Shila" <${process.env.EMAIL_USER || 'support@farmaciashila.com'}>`,
-        subject: 'Rivendos Fjalëkalimin - Farmaci Ashila',
-        html: this.getPasswordResetTemplate(resetLink)
-      };
+      const result = await mailjet.post('send', { version: 'v3.1' }).request({
+        Messages: [{
+          From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
+          To: [{ Email: userEmail }],
+          ReplyTo: { Email: this.senderEmail, Name: 'Farmacia Shila' },
+          Subject: 'Rivendos Fjalëkalimin - Farmaci Ashila',
+          HTMLContent: this.getPasswordResetTemplate(resetLink)
+        }]
+      });
 
-      const result = await this.transporter.sendMail(mailOptions);
-      console.log('Password reset email sent:', result.messageId);
+      console.log('Password reset email sent:', result.body);
       return result;
     } catch (error) {
       console.error('Error sending password reset email:', error);
