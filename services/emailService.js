@@ -1,19 +1,6 @@
-const Mailjet = require('node-mailjet');
 const nodemailer = require('nodemailer');
 
-let client;
-try {
-  client = new Mailjet({
-    apiKey: process.env.MAILJET_API_KEY,
-    apiSecret: process.env.MAILJET_SECRET_KEY
-  });
-  console.log('Mailjet initialized successfully');
-} catch (error) {
-  console.log('Mailjet failed to initialize, falling back to nodemailer:', error.message);
-  client = null;
-}
-
-// Fallback OVH SMTP transporter
+// Primary OVH SMTP transporter with anti-spam configuration
 const smtpTransporter = nodemailer.createTransport({
   host: 'ssl0.ovh.net',
   port: 465,
@@ -21,8 +8,37 @@ const smtpTransporter = nodemailer.createTransport({
   auth: {
     user: process.env.EMAIL_USER || 'noreply@farmaciashila.com',
     pass: process.env.EMAIL_PASSWORD
+  },
+  tls: {
+    rejectUnauthorized: false // Allow self-signed certificates
+  },
+  // Anti-spam headers and settings
+  pool: true, // Use connection pooling
+  maxConnections: 5,
+  maxMessages: 100,
+  rateDelta: 1000, // Rate limit: 1 email per second
+  rateLimit: 5, // Max 5 emails per second
+  headers: {
+    'X-Priority': '3', // Normal priority
+    'X-Mailer': 'Farmaci Ashila Website',
+    'X-MSMail-Priority': 'Normal',
+    'Importance': 'Normal'
   }
 });
+
+// Mailjet as backup (if keys are fixed in future)
+const Mailjet = require('node-mailjet');
+let client = null;
+try {
+  client = new Mailjet({
+    apiKey: process.env.MAILJET_API_KEY,
+    apiSecret: process.env.MAILJET_SECRET_KEY
+  });
+  console.log('Mailjet initialized successfully');
+} catch (error) {
+  console.log('Mailjet failed to initialize, using SMTP only:', error.message);
+  client = null;
+}
 
 class EmailService {
   constructor() {
@@ -31,31 +47,27 @@ class EmailService {
 
   async sendWelcomeEmail(userEmail, userName) {
     try {
-      let result;
-      
-      if (client) {
-        // Try Mailjet first
-        result = await client.post('send', { version: 'v3.1' }).request({
-          Messages: [{
-            From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
-            To: [{ Email: userEmail, Name: userName }],
-            ReplyTo: { Email: this.senderEmail, Name: 'Farmacia Shila' },
-            Subject: 'Mirësevjen te Farmaci Ashila',
-            HTMLContent: this.getWelcomeTemplate(userName)
-          }]
-        });
-      } else {
-        // Fallback to SMTP
-        result = await smtpTransporter.sendMail({
-          from: `"Farmacia Shila" <${this.senderEmail}>`,
-          to: userEmail,
-          replyTo: `"Farmacia Shila" <${this.senderEmail}>`,
-          subject: 'Mirësevjen te Farmaci Ashila',
-          html: this.getWelcomeTemplate(userName)
-        });
-      }
+      // Use OVH SMTP as primary with anti-spam headers
+      const result = await smtpTransporter.sendMail({
+        from: `"Farmaci Shila" <${this.senderEmail}>`,
+        to: userEmail,
+        replyTo: `"Farmaci Shila" <${this.senderEmail}>`,
+        subject: 'Mirësevjen te Farmaci Ashila',
+        html: this.getWelcomeTemplate(userName),
+        // Enhanced anti-spam headers
+        headers: {
+          'List-Unsubscribe': `<mailto:${this.senderEmail}?subject=unsubscribe>`,
+          'X-Auto-Response-Suppress': 'All',
+          'X-Campaign': 'welcome-email',
+          'X-Entity-Ref-ID': `welcome-${Date.now()}`,
+          'Message-ID': `<${Date.now()}-welcome@${process.env.EMAIL_USER?.split('@')[1] || 'farmaciashila.com'}>`,
+          'Date': new Date().toUTCString(),
+          'MIME-Version': '1.0',
+          'Content-Type': 'text/html; charset=UTF-8'
+        }
+      });
 
-      console.log('Welcome email sent:', result.body || result.messageId);
+      console.log('Welcome email sent via OVH SMTP:', result.messageId);
       return result;
     } catch (error) {
       console.error('Error sending welcome email:', error);
@@ -65,31 +77,16 @@ class EmailService {
 
   async sendOrderConfirmation(userEmail, orderDetails) {
     try {
-      let result;
-      
-      if (client) {
-        // Try Mailjet first
-        result = await client.post('send', { version: 'v3.1' }).request({
-          Messages: [{
-            From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
-            To: [{ Email: userEmail, Name: orderDetails.buyerName || 'Customer' }],
-            ReplyTo: { Email: this.senderEmail, Name: 'Farmacia Shila' },
-            Subject: 'Konfirmim Porosie - Farmaci Ashila',
-            HTMLContent: this.getOrderConfirmationTemplate(orderDetails)
-          }]
-        });
-      } else {
-        // Fallback to SMTP
-        result = await smtpTransporter.sendMail({
-          from: `"Farmacia Shila" <${this.senderEmail}>`,
-          to: userEmail,
-          replyTo: `"Farmacia Shila" <${this.senderEmail}>`,
-          subject: 'Konfirmim Porosie - Farmaci Ashila',
-          html: this.getOrderConfirmationTemplate(orderDetails)
-        });
-      }
+      // Use OVH SMTP as primary
+      const result = await smtpTransporter.sendMail({
+        from: `"Farmacia Shila" <${this.senderEmail}>`,
+        to: userEmail,
+        replyTo: `"Farmacia Shila" <${this.senderEmail}>`,
+        subject: 'Konfirmim Porosie - Farmaci Ashila',
+        html: this.getOrderConfirmationTemplate(orderDetails)
+      });
 
-      console.log('Order confirmation sent:', result.body || result.messageId);
+      console.log('Order confirmation sent via OVH SMTP:', result.messageId);
       return result;
     } catch (error) {
       console.error('Error sending order confirmation:', error);
@@ -100,31 +97,17 @@ class EmailService {
   async sendPasswordReset(userEmail, resetToken) {
     try {
       const resetLink = `https://www.farmaciashila.com/reset-password?token=${resetToken}`;
-      let result;
       
-      if (client) {
-        // Try Mailjet first
-        result = await client.post('send', { version: 'v3.1' }).request({
-          Messages: [{
-            From: { Email: this.senderEmail, Name: 'Farmacia Shila' },
-            To: [{ Email: userEmail }],
-            ReplyTo: { Email: this.senderEmail, Name: 'Farmacia Shila' },
-            Subject: 'Rivendos Fjalëkalimin - Farmaci Ashila',
-            HTMLContent: this.getPasswordResetTemplate(resetLink)
-          }]
-        });
-      } else {
-        // Fallback to SMTP
-        result = await smtpTransporter.sendMail({
-          from: `"Farmacia Shila" <${this.senderEmail}>`,
-          to: userEmail,
-          replyTo: `"Farmacia Shila" <${this.senderEmail}>`,
-          subject: 'Rivendos Fjalëkalimin - Farmaci Ashila',
-          html: this.getPasswordResetTemplate(resetLink)
-        });
-      }
+      // Use OVH SMTP as primary
+      const result = await smtpTransporter.sendMail({
+        from: `"Farmacia Shila" <${this.senderEmail}>`,
+        to: userEmail,
+        replyTo: `"Farmacia Shila" <${this.senderEmail}>`,
+        subject: 'Rivendos Fjalëkalimin - Farmaci Ashila',
+        html: this.getPasswordResetTemplate(resetLink)
+      });
 
-      console.log('Password reset email sent:', result.body || result.messageId);
+      console.log('Password reset email sent via OVH SMTP:', result.messageId);
       return result;
     } catch (error) {
       console.error('Error sending password reset email:', error);
@@ -161,10 +144,13 @@ class EmailService {
             <a href="https://www.farmaciashila.com/shop" class="btn">Shfleto Produktet</a>
             <p>Për çdo pyetje, na kontaktoni:</p>
             <p>📧 noreply@farmaciashila.com<br>📞 +355 68 687 9292</p>
+            <p><small>Ju keni regjistruar me këtë email adresë. Nëse nuk e keni kërkuar ju, ju lutemi shpërbreni këtë email.</small></p>
           </div>
           <div class="footer">
             <p>© 2024 Farmaci Ashila. Të gjitha të drejtat e rezervuara.</p>
             <p>Kjo email është e automatizuar. Ju lutemi mos i përgjigjeni këtij email-i.</p>
+            <p>Farmaci Ashila, Lezhe, Albania</p>
+            <p>Tel: +355 68 687 9292 | Web: www.farmaciashila.com</p>
           </div>
         </div>
       </body>

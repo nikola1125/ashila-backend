@@ -1,11 +1,21 @@
-const Mailjet = require('node-mailjet');
-const client = new Mailjet({
-  apiKey: process.env.MAILJET_API_KEY,
-  apiSecret: process.env.MAILJET_SECRET_KEY
+const nodemailer = require('nodemailer');
+
+// Primary OVH SMTP transporter
+const smtpTransporter = nodemailer.createTransport({
+  host: 'ssl0.ovh.net',
+  port: 465,
+  secure: true,
+  auth: {
+    user: process.env.EMAIL_USER || 'noreply@farmaciashila.com',
+    pass: process.env.EMAIL_PASSWORD
+  },
+  tls: {
+    rejectUnauthorized: false // Allow self-signed certificates
+  }
 });
 
 /**
- * Sends order confirmation email with invoice details via Mailjet.
+ * Sends order confirmation email with invoice details via OVH SMTP.
  * @param {Object} order - The order object.
  */
 const sendOrderConfirmation = async (order) => {
@@ -110,19 +120,17 @@ const sendOrderConfirmation = async (order) => {
     `;
 
   try {
-    const result = await client.post('send', { version: 'v3.1' }).request({
-      Messages: [{
-        From: { Email: process.env.MAILJET_SENDER_EMAIL || 'noreply@farmaciashila.com', Name: 'Farmacia Shila' },
-        To: [{ Email: order.buyerEmail, Name: order.buyerName || 'Customer' }],
-        ReplyTo: { Email: process.env.MAILJET_SENDER_EMAIL || 'noreply@farmaciashila.com', Name: 'Farmacia Shila' },
-        Subject: `Order Confirmation #${order.orderNumber}`,
-        HTMLContent: htmlContent
-      }]
+    const result = await smtpTransporter.sendMail({
+      from: `"Farmacia Shila" <${process.env.EMAIL_USER || 'noreply@farmaciashila.com'}>`,
+      to: order.buyerEmail,
+      replyTo: `"Farmacia Shila" <${process.env.EMAIL_USER || 'noreply@farmaciashila.com'}>`,
+      subject: `Order Confirmation #${order.orderNumber}`,
+      html: htmlContent
     });
 
-    console.log(`Confirmation email sent to ${order.buyerEmail}`);
+    console.log(`Confirmation email sent via OVH SMTP to ${order.buyerEmail}`);
   } catch (error) {
-    console.error('Error sending email via Mailjet:', error);
+    console.error('Error sending email via OVH SMTP:', error);
   }
 };
 
