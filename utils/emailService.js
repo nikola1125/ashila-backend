@@ -1,32 +1,30 @@
-const Mailjet = require('node-mailjet');
+const nodemailer = require('nodemailer');
 
-// Initialize Mailjet with API keys
-const mailjet = process.env.MAILJET_API_KEY && process.env.MAILJET_SECRET_KEY
-  ? Mailjet.apiConnect(
-    process.env.MAILJET_API_KEY,
-    process.env.MAILJET_SECRET_KEY
-  )
-  : null;
+// Initialize OVH email transporter - Production Safe
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'ssl0.ovh.net',
+  port: process.env.SMTP_PORT || 465,
+  secure: true, // MUST be true for production-safe SSL
+  auth: {
+    user: process.env.EMAIL_USER || 'support@farmaciashila.com',
+    pass: process.env.EMAIL_PASSWORD
+  }
+});
 
 /**
- * Sends order confirmation email with invoice details via Mailjet.
+ * Sends order confirmation email with invoice details via OVH email.
  * @param {Object} order - The order object.
  */
 const sendOrderConfirmation = async (order) => {
-  if (!mailjet) {
-    console.warn('Skipping email: Missing MAILJET_API_KEY or MAILJET_SECRET_KEY');
-    return;
-  }
-
-  if (!process.env.MAILJET_SENDER_EMAIL) {
-    console.warn('Skipping email: Missing MAILJET_SENDER_EMAIL');
+  if (!transporter) {
+    console.warn('Skipping email: Email transporter not initialized');
     return;
   }
 
   const htmlContent = `
       <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333; background-color: #ffffff; border: 1px solid #e0e0e0;">
         <!-- Header -->
-        <div style="background-color: #5A3F2A; padding: 30px; text-align: center;">
+        <div style="background-color: #A67856; padding: 30px; text-align: center;">
           <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 1px;">INVOICE DETAILS</h1>
           <p style="color: #e0e0e0; margin: 5px 0 0; font-size: 14px;">Thank you for shopping with Farmaci Ashila</p>
         </div>
@@ -36,14 +34,14 @@ const sendOrderConfirmation = async (order) => {
           <div style="border-bottom: 2px solid #f0f0f0; padding-bottom: 20px; margin-bottom: 30px;">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap;">
                <div>
-                  <h2 style="color: #5A3F2A; margin: 0 0 5px; font-size: 18px;">INVOICE #${order.orderNumber}</h2>
+                  <h2 style="color: #A67856; margin: 0 0 5px; font-size: 18px;">INVOICE #${order.orderNumber}</h2>
                   <p style="margin: 0; color: #666; font-size: 12px;">Date: ${new Date(order.createdAt).toLocaleDateString()}</p>
                   <p style="margin: 0; color: #666; font-size: 12px;">Status: <span style="font-weight: bold; color: ${order.paymentStatus === 'paid' ? '#2ecc71' : '#e74c3c'}">${order.paymentStatus.toUpperCase()}</span></p>
                </div>
                <div style="text-align: right; margin-top: 10px;">
                   <h3 style="margin: 0; font-size: 14px; color: #333;">Farmaci Ashila</h3>
                   <p style="margin: 0; font-size: 12px; color: #777;">Lezhe, Albania</p>
-                  <p style="margin: 0; font-size: 12px; color: #777;">farmaciashila11@gmail.com</p>
+                  <p style="margin: 0; font-size: 12px; color: #777;">noreply@farmaciashila.com</p>
                </div>
             </div>
           </div>
@@ -100,23 +98,23 @@ const sendOrderConfirmation = async (order) => {
                   <td style="padding: 8px; color: #666; font-size: 14px;">Shipping:</td>
                   <td style="padding: 8px; text-align: right; color: #333; font-size: 14px;">${(order.shippingCost || 0).toFixed(2)} ALL</td>
                 </tr>
-                <tr style="border-top: 2px solid #5A3F2A;">
-                  <td style="padding: 12px 8px; font-weight: bold; color: #5A3F2A; font-size: 16px;">TOTAL DUE:</td>
-                  <td style="padding: 12px 8px; text-align: right; font-weight: bold; color: #5A3F2A; font-size: 16px;">${order.finalPrice.toFixed(2)} ALL</td>
+                <tr style="border-top: 2px solid #A67856;">
+                  <td style="padding: 12px 8px; font-weight: bold; color: #A67856; font-size: 16px;">TOTAL DUE:</td>
+                  <td style="padding: 12px 8px; text-align: right; font-weight: bold; color: #A67856; font-size: 16px;">${order.finalPrice.toFixed(2)} ALL</td>
                 </tr>
               </table>
             </div>
           </div>
           
           <!-- Note -->
-           <div style="margin-top: 40px; background-color: #f9f7f4; padding: 15px; border-left: 4px solid #5A3F2A; font-size: 13px; color: #555;">
+           <div style="margin-top: 40px; background-color: #f9f7f4; padding: 15px; border-left: 4px solid #A67856; font-size:13px; color: #555;">
              <p style="margin: 0;"><strong>Note:</strong> Payment will be collected upon delivery (Cash on Delivery). Please retain this invoice for your records.</p>
           </div>
 
         </div>
 
         <!-- Footer -->
-        <div style="background-color: #333; color: #888; padding: 20px; text-align: center; font-size: 12px;">
+        <div style="background-color: #4A3628; color: #888; padding: 20px; text-align: center; font-size: 12px;">
           <p style="margin: 0;">&copy; ${new Date().getFullYear()} Farmaci Ashila. All rights reserved.</p>
           <p style="margin: 5px 0 0;">This email was sent to ${order.buyerEmail}</p>
         </div>
@@ -124,30 +122,17 @@ const sendOrderConfirmation = async (order) => {
     `;
 
   try {
-    const result = await mailjet
-      .post("send", { 'version': 'v3.1' })
-      .request({
-        "Messages": [
-          {
-            "From": {
-              "Email": process.env.MAILJET_SENDER_EMAIL,
-              "Name": "Farmaci Ashila"
-            },
-            "To": [
-              {
-                "Email": order.buyerEmail,
-                "Name": order.buyerName || "Customer"
-              }
-            ],
-            "Subject": `Order Confirmation #${order.orderNumber}`,
-            "HTMLPart": htmlContent,
-          }
-        ]
-      });
+    const result = await transporter.sendMail({
+      from: `"Farmacia Shila" <${process.env.EMAIL_USER || 'support@farmaciashila.com'}>`,
+      to: order.buyerEmail,
+      replyTo: `"Farmacia Shila" <${process.env.EMAIL_USER || 'support@farmaciashila.com'}>`,
+      subject: `Order Confirmation #${order.orderNumber}`,
+      html: htmlContent
+    });
 
     console.log(`Confirmation email sent to ${order.buyerEmail}`);
   } catch (error) {
-    console.error('Error sending email via Mailjet:', error.statusCode, error.message);
+    console.error('Error sending email via OVH:', error);
   }
 };
 
