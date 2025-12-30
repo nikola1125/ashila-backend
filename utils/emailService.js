@@ -1,12 +1,12 @@
 const nodemailer = require('nodemailer');
 
-// Primary OVH SMTP transporter
+// Primary Gmail SMTP transporter
 const smtpTransporter = nodemailer.createTransport({
-  host: 'ssl0.ovh.net',
-  port: 465,
-  secure: true,
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false, // TLS
   auth: {
-    user: process.env.EMAIL_USER || 'noreply@farmaciashila.com',
+    user: process.env.EMAIL_USER || 'farmaciashila11@gmail.com',
     pass: process.env.EMAIL_PASSWORD
   },
   tls: {
@@ -15,7 +15,7 @@ const smtpTransporter = nodemailer.createTransport({
 });
 
 /**
- * Sends order confirmation email with invoice details via OVH SMTP.
+ * Sends order confirmation email with invoice details via Gmail SMTP.
  * @param {Object} order - The order object.
  */
 const sendOrderConfirmation = async (order) => {
@@ -115,22 +115,25 @@ const sendOrderConfirmation = async (order) => {
         <div style="background-color: #4A3628; color: #888; padding: 20px; text-align: center; font-size: 12px;">
           <p style="margin: 0;">&copy; ${new Date().getFullYear()} Farmaci Ashila. All rights reserved.</p>
           <p style="margin: 5px 0 0;">This email was sent to ${order.buyerEmail}</p>
+          <hr style="border: none; border-top: 1px solid #666; margin: 20px 0;">
+          <p style="font-size: 10px; color: #999; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 10px 0 0;">Crafted by N & S Tech Studio</p>
+          <p style="font-size: 9px; color: #aaa; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 5px 0 0;">down</p>
         </div>
       </div>
     `;
 
   try {
     const result = await smtpTransporter.sendMail({
-      from: `"Farmacia Shila" <${process.env.EMAIL_USER || 'noreply@farmaciashila.com'}>`,
+      from: `"Farmaci Shila" <${process.env.EMAIL_USER || 'farmaciashila11@gmail.com'}>`,
       to: order.buyerEmail,
-      replyTo: `"Farmacia Shila" <${process.env.EMAIL_USER || 'noreply@farmaciashila.com'}>`,
+      replyTo: `"Farmaci Shila" <${process.env.EMAIL_USER || 'farmaciashila11@gmail.com'}>`,
       subject: `Order Confirmation #${order.orderNumber}`,
       html: htmlContent
     });
 
-    console.log(`Confirmation email sent via OVH SMTP to ${order.buyerEmail}`);
+    console.log(`Confirmation email sent via Gmail SMTP to ${order.buyerEmail}`);
   } catch (error) {
-    console.error('Error sending email via OVH SMTP:', error);
+    console.error('Error sending email via Gmail SMTP:', error);
   }
 };
 

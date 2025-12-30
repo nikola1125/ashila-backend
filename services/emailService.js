@@ -1,16 +1,13 @@
 const nodemailer = require('nodemailer');
 
-// Primary OVH SMTP transporter with anti-spam configuration
+// Primary Gmail SMTP transporter
 const smtpTransporter = nodemailer.createTransport({
-  host: 'ssl0.ovh.net',
-  port: 465,
-  secure: true,
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false, // TLS
   auth: {
-    user: process.env.EMAIL_USER || 'noreply@farmaciashila.com',
+    user: process.env.EMAIL_USER || 'farmaciashila11@gmail.com',
     pass: process.env.EMAIL_PASSWORD
-  },
-  tls: {
-    rejectUnauthorized: false // Allow self-signed certificates
   },
   // Anti-spam headers and settings
   pool: true, // Use connection pooling
@@ -42,12 +39,12 @@ try {
 
 class EmailService {
   constructor() {
-    this.senderEmail = process.env.MAILJET_SENDER_EMAIL || 'noreply@farmaciashila.com';
+    this.senderEmail = process.env.EMAIL_USER || 'farmaciashila11@gmail.com';
   }
 
   async sendWelcomeEmail(userEmail, userName) {
     try {
-      // Use OVH SMTP as primary with anti-spam headers
+      // Use Gmail SMTP as primary with anti-spam headers
       const result = await smtpTransporter.sendMail({
         from: `"Farmaci Shila" <${this.senderEmail}>`,
         to: userEmail,
@@ -60,14 +57,14 @@ class EmailService {
           'X-Auto-Response-Suppress': 'All',
           'X-Campaign': 'welcome-email',
           'X-Entity-Ref-ID': `welcome-${Date.now()}`,
-          'Message-ID': `<${Date.now()}-welcome@${process.env.EMAIL_USER?.split('@')[1] || 'farmaciashila.com'}>`,
+          'Message-ID': `<${Date.now()}-welcome@${process.env.EMAIL_USER?.split('@')[1] || 'gmail.com'}>`,
           'Date': new Date().toUTCString(),
           'MIME-Version': '1.0',
           'Content-Type': 'text/html; charset=UTF-8'
         }
       });
 
-      console.log('Welcome email sent via OVH SMTP:', result.messageId);
+      console.log('Welcome email sent via Gmail SMTP:', result.messageId);
       return result;
     } catch (error) {
       console.error('Error sending welcome email:', error);
@@ -77,16 +74,16 @@ class EmailService {
 
   async sendOrderConfirmation(userEmail, orderDetails) {
     try {
-      // Use OVH SMTP as primary
+      // Use Gmail SMTP as primary
       const result = await smtpTransporter.sendMail({
-        from: `"Farmacia Shila" <${this.senderEmail}>`,
+        from: `"Farmaci Shila" <${this.senderEmail}>`,
         to: userEmail,
-        replyTo: `"Farmacia Shila" <${this.senderEmail}>`,
+        replyTo: `"Farmaci Shila" <${this.senderEmail}>`,
         subject: 'Konfirmim Porosie - Farmaci Ashila',
         html: this.getOrderConfirmationTemplate(orderDetails)
       });
 
-      console.log('Order confirmation sent via OVH SMTP:', result.messageId);
+      console.log('Order confirmation sent via Gmail SMTP:', result.messageId);
       return result;
     } catch (error) {
       console.error('Error sending order confirmation:', error);
@@ -98,16 +95,16 @@ class EmailService {
     try {
       const resetLink = `https://www.farmaciashila.com/reset-password?token=${resetToken}`;
       
-      // Use OVH SMTP as primary
+      // Use Gmail SMTP as primary
       const result = await smtpTransporter.sendMail({
-        from: `"Farmacia Shila" <${this.senderEmail}>`,
+        from: `"Farmaci Shila" <${this.senderEmail}>`,
         to: userEmail,
-        replyTo: `"Farmacia Shila" <${this.senderEmail}>`,
+        replyTo: `"Farmaci Shila" <${this.senderEmail}>`,
         subject: 'Rivendos Fjalëkalimin - Farmaci Ashila',
         html: this.getPasswordResetTemplate(resetLink)
       });
 
-      console.log('Password reset email sent via OVH SMTP:', result.messageId);
+      console.log('Password reset email sent via Gmail SMTP:', result.messageId);
       return result;
     } catch (error) {
       console.error('Error sending password reset email:', error);
@@ -151,6 +148,9 @@ class EmailService {
             <p>Kjo email është e automatizuar. Ju lutemi mos i përgjigjeni këtij email-i.</p>
             <p>Farmaci Ashila, Lezhe, Albania</p>
             <p>Tel: +355 68 687 9292 | Web: www.farmaciashila.com</p>
+            <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 20px 0;">
+            <p style="font-size: 10px; color: #999; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 10px 0 0;">Crafted by N & S Tech Studio</p>
+            <p style="font-size: 9px; color: #aaa; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 5px 0 0;">down</p>
           </div>
         </div>
       </body>
@@ -204,45 +204,10 @@ class EmailService {
           </div>
           <div class="footer">
             <p>© 2024 Farmaci Ashila. Të gjitha të drejtat e rezervuara.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-  }
-
-  getPasswordResetTemplate(resetLink) {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>Rivendos Fjalëkalimin - Farmaci Ashila</title>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #A67856; color: white; padding: 20px; text-align: center; }
-          .content { padding: 20px; background: #F5EDE4; }
-          .footer { background: #4A3628; color: white; padding: 15px; text-align: center; font-size: 12px; }
-          .btn { display: inline-block; padding: 12px 24px; background: #A67856; color: white; text-decoration: none; border-radius: 4px; margin: 10px 0; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>Farmaci Ashila</h1>
-            <p>Rivendos Fjalëkalimin</p>
-          </div>
-          <div class="content">
-            <h2>Rivendosni Fjalëkalimin Tuaj</h2>
-            <p>Kemi marrë një kërkesë për rivendosje të fjalëkalimit për llogarinë tuaj.</p>
-            <p>Klikoni butonin më poshtë për të vendosur një fjalëkalim të ri:</p>
-            <a href="${resetLink}" class="btn">Rivendos Fjalëkalimin</a>
-            <p>Nëse nuk kërkoni ju këtë ndryshim, mund të injoroni këtë email.</p>
-            <p>Kjo lidhje do të skadë pas 1 ore.</p>
-          </div>
-          <div class="footer">
-            <p>© 2024 Farmaci Ashila. Të gjitha të drejtat e rezervuara.</p>
+            <p>Do t'ju njoftojmë sapo porosia të dërgohet.</p>
+            <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 20px 0;">
+            <p style="font-size: 10px; color: #999; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 10px 0 0;">Crafted by N & S Tech Studio</p>
+            <p style="font-size: 9px; color: #aaa; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 5px 0 0;">down</p>
           </div>
         </div>
       </body>
