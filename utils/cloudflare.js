@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { processImage, validateImage } = require('./imageProcessor');
 
 /**
  * Uploads an image buffer to Cloudflare Images.
@@ -10,18 +11,25 @@ const { S3Client } = require('@aws-sdk/client-s3');
 const { Upload } = require('@aws-sdk/lib-storage');
 
 /**
- * Uploads an image buffer to Cloudflare R2 (S3 Compatible).
+ * Uploads an image buffer to Cloudflare R2 (S3 Compatible) with image processing.
  * @param {Buffer} buffer - The image file buffer.
  * @param {string} originalName - Original filename (optional).
+ * @param {Object} options - Processing options.
  * @returns {Promise<string>} - The public URL of the uploaded image.
  */
-async function uploadToCloudflare(buffer, originalName) {
+async function uploadToCloudflare(buffer, originalName, options = {}) {
+    const {
+        width = 1000,
+        height = 1000,
+        quality = 80,
+        format = 'webp'
+    } = options;
+
     const bucketName = process.env.R2_BUCKET_NAME;
     const accountId = process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID;
     const accessKeyId = process.env.R2_ACCESS_KEY_ID;
     const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
     const publicUrl = process.env.R2_PUBLIC_URL;
-
 
     console.log('--- R2 CONFIG CHECK ---');
     console.log('Bucket:', bucketName || 'MISSING');
@@ -35,33 +43,46 @@ async function uploadToCloudflare(buffer, originalName) {
         throw new Error('Missing R2 credentials in .env (R2_BUCKET_NAME, R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_PUBLIC_URL)');
     }
 
-
-    const r2 = new S3Client({
-        region: 'auto',
-        endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-        credentials: {
-            accessKeyId: accessKeyId,
-            secretAccessKey: secretAccessKey,
-        },
-    });
-
-    const fileName = `${Date.now()}-${originalName || 'image.jpg'}`.replace(/\s+/g, '-');
-
     try {
+        // Validate and process image
+        await validateImage(buffer, { originalname: originalName });
+        console.log(`Processing image: ${originalName} -> ${width}x${height} ${format}`);
+        
+        const processedBuffer = await processImage(buffer, {
+            width,
+            height,
+            quality,
+            format
+        });
+
+        const fileName = `${Date.now()}-${originalName?.replace(/\.[^/.]+$/, '') || 'image'}.${format}`.replace(/\s+/g, '-');
+
+        const r2 = new S3Client({
+            region: 'auto',
+            endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+            credentials: {
+                accessKeyId: accessKeyId,
+                secretAccessKey: secretAccessKey,
+            },
+        });
+
         const upload = new Upload({
             client: r2,
             params: {
                 Bucket: bucketName,
                 Key: fileName,
-                Body: buffer,
-                ContentType: 'image/jpeg', // Infer this if possible, but default is usually fine for display
+                Body: processedBuffer,
+                ContentType: `image/${format}`,
             },
         });
 
         await upload.done();
 
         const baseUrl = publicUrl.endsWith('/') ? publicUrl.slice(0, -1) : publicUrl;
-        return `${baseUrl}/${fileName}`;
+        const finalUrl = `${baseUrl}/${fileName}`;
+        
+        console.log(`✅ Image uploaded and processed: ${finalUrl}`);
+        return finalUrl;
 
     } catch (error) {
         console.error('R2 Upload Error:', error);

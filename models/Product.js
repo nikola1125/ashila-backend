@@ -15,7 +15,8 @@ const productSchema = new mongoose.Schema({
   categoryName: String,
   subcategory: String, // e.g. "Tipi i lekures"
   productType: String,
-  option: String,      // e.g. "Lekure normale"
+  option: String,      // e.g. "Lekure normale" - kept for backward compatibility
+  options: [String],   // New: Multiple options support
   size: String,        // e.g. "50ml", "100 tablets"
   skinProblem: String, // e.g. "papules", "cyst"
   price: {
@@ -104,5 +105,6 @@ productSchema.index({ stock: 1 });
 productSchema.index({ isActive: 1 });
 productSchema.index({ isBestseller: 1 });
 productSchema.index({ size: 1 }); // For variant queries
+productSchema.index({ options: 1 }); // New: Index for multiple options
 
 module.exports = mongoose.model('Product', productSchema);

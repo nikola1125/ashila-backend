@@ -295,10 +295,17 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
     if (req.file) {
       const { uploadToCloudflare } = require('../utils/cloudflare');
       try {
-        imageUrl = await uploadToCloudflare(req.file.buffer, req.file.originalname);
+        // Process image with optimal size for our frontend
+        // Using 1000x1000 for high quality display
+        imageUrl = await uploadToCloudflare(req.file.buffer, req.file.originalname, {
+          width: 1000,
+          height: 1000,
+          quality: 80,
+          format: 'webp'
+        });
       } catch (uploadError) {
         console.error('Image upload failed:', uploadError);
-        return res.status(500).json({ message: 'Failed to upload image' });
+        return res.status(500).json({ message: 'Failed to upload image: ' + uploadError.message });
       }
     }
 
@@ -325,6 +332,26 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
       req.user?.email ||
       (req.user?.admin === true ? 'admin' : null);
 
+    // Handle multiple options
+    let options = [];
+    if (req.body.options) {
+      if (Array.isArray(req.body.options)) {
+        options = req.body.options;
+      } else if (typeof req.body.options === 'string') {
+        try {
+          options = JSON.parse(req.body.options);
+        } catch (e) {
+          console.error('Failed to parse options:', e);
+          options = [];
+        }
+      }
+      console.log('=== BACKEND OPTIONS DEBUG ===');
+      console.log('req.body.options raw:', req.body.options);
+      console.log('req.body.options type:', typeof req.body.options);
+      console.log('Parsed options:', options);
+      console.log('Options length:', options.length);
+    }
+
     // Base product data (common to all variants)
     const baseProductData = {
       itemName: req.body.itemName,
@@ -334,7 +361,8 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
       categoryName: req.body.categoryName,
       subcategory: req.body.subcategory,
       productType: req.body.productType,
-      option: req.body.option,
+      option: req.body.option, // Keep for backward compatibility
+      options: options, // New: Multiple options support
       price: req.body.price,
       discount: req.body.discount || 0,
       image: imageUrl,
@@ -350,6 +378,8 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
       skinProblem: req.body.skinProblem,
       variants: [] // Keep variants array empty for backward compatibility
     };
+
+    console.log('Saving product with options:', baseProductData.options); // Debug logging
 
     let savedProducts = [];
     let variantGroupId = null;
@@ -424,12 +454,18 @@ router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), upload.singl
     if (req.file) {
       const { uploadToCloudflare } = require('../utils/cloudflare');
       try {
-        const imageUrl = await uploadToCloudflare(req.file.buffer, req.file.originalname);
+        // Process image with optimal size for our frontend
+        const imageUrl = await uploadToCloudflare(req.file.buffer, req.file.originalname, {
+          width: 1000,
+          height: 1000,
+          quality: 80,
+          format: 'webp'
+        });
         req.body.image = imageUrl;
         req.body.imageUrl = imageUrl;
       } catch (uploadError) {
         console.error('Image upload failed:', uploadError);
-        return res.status(500).json({ message: 'Failed to upload image' });
+        return res.status(500).json({ message: 'Failed to upload image: ' + uploadError.message });
       }
     } else if (req.body.imageUrl) {
       req.body.image = req.body.imageUrl;
@@ -449,6 +485,24 @@ router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), upload.singl
       } catch (err) {
         return res.status(400).json({ message: 'Invalid variants data' });
       }
+    }
+
+    // Handle multiple options for updates
+    if (req.body.options) {
+      if (Array.isArray(req.body.options)) {
+        req.body.options = req.body.options;
+      } else if (typeof req.body.options === 'string') {
+        try {
+          req.body.options = JSON.parse(req.body.options);
+        } catch (err) {
+          return res.status(400).json({ message: 'Invalid options data' });
+        }
+      }
+      console.log('=== BACKEND UPDATE DEBUG ===');
+      console.log('Update req.body.options raw:', req.body.options);
+      console.log('Update req.body.options type:', typeof req.body.options);
+      console.log('Update parsed options:', req.body.options);
+      console.log('Update options length:', req.body.options?.length);
     }
 
     // Handle bestseller status: if marking as bestseller and product has variantGroupId,
