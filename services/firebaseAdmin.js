@@ -32,7 +32,7 @@ try {
     const privateKeyRaw = process.env.FIREBASE_PRIVATE_KEY;
     const privateKeyBase64 = process.env.FIREBASE_PRIVATE_KEY_BASE64;
 
-    const resolvedPrivateKey = privateKeyBase64
+    const resolvedPrivateKey = (privateKeyBase64 && privateKeyBase64.length > 30)
       ? Buffer.from(String(privateKeyBase64), 'base64').toString('utf8')
       : privateKeyRaw;
 
