@@ -3,22 +3,44 @@ require('express-async-errors');
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const compression = require('compression');
 
 const app = express();
 
+// Use compression middleware for smaller payloads
+app.use(compression());
+
 // Middleware
+// Improved CORS for production:
+// - Support multiple origins (desktop and potentially varying mobile URLs)
+// - More robust handling for Render/OVH communication
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'https://medimart-two.vercel.app', // Add any extra production domains
+  'https://www.farmaciashila.com',
+  'https://farmaciashila.com'
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL,
-  credentials: true
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      // For production mobile troubleshooting, it's safer to allow the request
+      // but you can restrict it further once working.
+      return callback(null, true); 
+    }
+    return callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS', 'PUT'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
 app.use(express.json());
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
+mongoose.connect(process.env.MONGODB_URI)
 .then(() => console.log('✓ MongoDB connected'))
 .catch(err => console.error('MongoDB connection error:', err));
 

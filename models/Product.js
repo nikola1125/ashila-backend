@@ -5,6 +5,7 @@ const productSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  skinProblem: String, // e.g. "papules", "cyst"
   genericName: String,
   company: String,
   category: {
@@ -18,7 +19,6 @@ const productSchema = new mongoose.Schema({
   option: String,      // e.g. "Lekure normale" - kept for backward compatibility
   options: [String],   // New: Multiple options support
   size: String,        // e.g. "50ml", "100 tablets"
-  skinProblem: String, // e.g. "papules", "cyst"
   price: {
     type: Number,
     required: true
@@ -106,5 +106,8 @@ productSchema.index({ isActive: 1 });
 productSchema.index({ isBestseller: 1 });
 productSchema.index({ size: 1 }); // For variant queries
 productSchema.index({ options: 1 }); // New: Index for multiple options
+productSchema.index({ categoryName: 1, isActive: 1 });
+productSchema.index({ subcategory: 1, isActive: 1 });
+productSchema.index({ productType: 1, isActive: 1 });
 
 module.exports = mongoose.model('Product', productSchema);

@@ -17,7 +17,6 @@ router.get('/', async (req, res) => {
     if (category) filter.categoryName = category;
     if (seller) filter.sellerEmail = seller;
     if (search) {
-      console.log('Search Query:', search);
       const escapeRegex = (text) => text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
       const regex = new RegExp(escapeRegex(search), 'i');
 
@@ -29,16 +28,13 @@ router.get('/', async (req, res) => {
       ];
     }
 
-    console.log('Search Filter:', JSON.stringify(filter));
-
-    let query = Product.find(filter).populate('category');
+    let query = Product.find(filter).populate('category').lean();
 
     if (limit) {
       query = query.limit(parseInt(limit));
     }
 
     const products = await query;
-    console.log(`Found ${products.length} products`);
 
     // Group variants if requested
     if (group === 'true') {
@@ -126,7 +122,8 @@ router.get('/latest', async (req, res) => {
     const products = await Product.find({ isActive: true })
       .populate('category')
       .sort({ createdAt: -1 })
-      .limit(16);
+      .limit(16)
+      .lean();
     
     if (group === 'true') {
       const groupedProducts = groupVariants(products);
@@ -148,7 +145,8 @@ router.get('/top-discount', async (req, res) => {
     })
       .populate('category')
       .sort({ discount: -1 }) // Sort by discount descending
-      .limit(20);
+      .limit(20)
+      .lean();
     res.json({ medicines: products, result: products });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -163,7 +161,7 @@ router.get('/seller', async (req, res) => {
     if (!email) {
       return res.status(400).json({ message: 'Email parameter is required' });
     }
-    const products = await Product.find({ sellerEmail: email });
+    const products = await Product.find({ sellerEmail: email }).lean();
     res.json({ medicines: products });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -173,7 +171,7 @@ router.get('/seller', async (req, res) => {
 // Get products by seller (path parameter - for backward compatibility)
 router.get('/seller/:email', async (req, res) => {
   try {
-    const products = await Product.find({ sellerEmail: req.params.email });
+    const products = await Product.find({ sellerEmail: req.params.email }).lean();
     res.json({ medicines: products });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -194,7 +192,8 @@ router.get('/bestsellers', async (req, res) => {
       // First, get all bestseller products (no limit yet)
       const bestsellerProducts = await Product.find(filter)
         .populate('category')
-        .sort({ createdAt: -1 });
+        .sort({ createdAt: -1 })
+        .lean();
       
       // Collect all variantGroupIds from bestseller products
       const variantGroupIds = bestsellerProducts
@@ -219,21 +218,11 @@ router.get('/bestsellers', async (req, res) => {
         $or: queryConditions
       })
         .populate('category')
-        .sort({ createdAt: -1 });
+        .sort({ createdAt: -1 })
+        .lean();
       
       // Group variants together
       const groupedProducts = groupVariants(allProducts);
-      
-      // Log for debugging
-      console.log(`Bestsellers: Found ${bestsellerProducts.length} bestseller products`);
-      console.log(`Bestsellers: Found ${uniqueVariantGroupIds.length} unique variant groups`);
-      console.log(`Bestsellers: Found ${allProducts.length} total products (including variants)`);
-      console.log(`Bestsellers: Grouped into ${groupedProducts.length} products`);
-      groupedProducts.forEach(p => {
-        if (p.variants && p.variants.length > 0) {
-          console.log(`  - ${p.itemName}: ${p.variants.length} variants`);
-        }
-      });
       
       // Limit to 20 grouped products after grouping
       const limitedGroupedProducts = groupedProducts.slice(0, 20);
@@ -244,7 +233,8 @@ router.get('/bestsellers', async (req, res) => {
       const bestsellerProducts = await Product.find(filter)
         .populate('category')
         .sort({ createdAt: -1 })
-        .limit(20);
+        .limit(20)
+        .lean();
       res.json({ result: bestsellerProducts });
     }
   } catch (err) {
@@ -265,7 +255,8 @@ router.get('/bestsellers/:category', async (req, res) => {
     const products = await Product.find(filter)
       .populate('category')
       .sort({ createdAt: -1 })
-      .limit(20);
+      .limit(20)
+      .lean();
 
     // Return as array (frontend checks for array first, then result property)
     res.json(products);
@@ -278,7 +269,7 @@ router.get('/bestsellers/:category', async (req, res) => {
 // Get product by id (must be after /seller routes)
 router.get('/:id', async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id).populate('category');
+    const product = await Product.findById(req.params.id).populate('category').lean();
     if (!product) return res.status(404).json({ message: 'Product not found' });
     res.json(product);
   } catch (err) {
@@ -341,15 +332,9 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
         try {
           options = JSON.parse(req.body.options);
         } catch (e) {
-          console.error('Failed to parse options:', e);
           options = [];
         }
       }
-      console.log('=== BACKEND OPTIONS DEBUG ===');
-      console.log('req.body.options raw:', req.body.options);
-      console.log('req.body.options type:', typeof req.body.options);
-      console.log('Parsed options:', options);
-      console.log('Options length:', options.length);
     }
 
     // Base product data (common to all variants)
@@ -378,8 +363,6 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
       skinProblem: req.body.skinProblem,
       variants: [] // Keep variants array empty for backward compatibility
     };
-
-    console.log('Saving product with options:', baseProductData.options); // Debug logging
 
     let savedProducts = [];
     let variantGroupId = null;
@@ -498,11 +481,6 @@ router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), upload.singl
           return res.status(400).json({ message: 'Invalid options data' });
         }
       }
-      console.log('=== BACKEND UPDATE DEBUG ===');
-      console.log('Update req.body.options raw:', req.body.options);
-      console.log('Update req.body.options type:', typeof req.body.options);
-      console.log('Update parsed options:', req.body.options);
-      console.log('Update options length:', req.body.options?.length);
     }
 
     // Handle bestseller status: if marking as bestseller and product has variantGroupId,
