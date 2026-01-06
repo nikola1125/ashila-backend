@@ -147,78 +147,75 @@ router.get('/:email', async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-}); router.post('/', async (req, res) => {
+});
+
+// Shared POST handler for orders
+const handleOrderPost = async (req, res) => {
   try {
     const { items, buyerEmail, buyerName, deliveryAddress, status } = req.body;
 
-    const SHIPPING_COST = 300; // Fixed delivery fee
+    // Get shipping cost based on free delivery setting
+    const Settings = require('../models/Settings');
+    const settings = await Settings.findOne();
+    const freeDelivery = settings?.freeDelivery || false;
+    const SHIPPING_COST = freeDelivery ? 0 : 300; // 0 if free delivery, 300 otherwise
 
     // Validate stock for each item - parallel processing for better performance
     const Product = require('../models/Product');
     const stockChecks = items.map(async (item) => {
       try {
         let product;
-        
-        // If item has selectedSize, find product by ID and size
-        if (item.selectedSize) {
-          product = await Product.findOne({ 
-            _id: item.productId, 
-            size: item.selectedSize 
-          });
-        } else {
-          // Find product by ID only
+        if (item.productId) {
           product = await Product.findById(item.productId);
+        } else {
+          // Legacy support for items without productId
+          product = await Product.findOne({ itemName: item.itemName });
         }
-
-        if (!product) {
-          return {
-            itemName: item.itemName || 'Unknown Product',
-            requestedQuantity: item.quantity,
-            availableStock: 0,
-            selectedSize: item.selectedSize || null
-          };
-        }
-
-        const availableStock = Number(product.stock) || 0;
-        const requestedQuantity = Number(item.quantity) || 0;
-
-        if (requestedQuantity > availableStock) {
-          return {
-            itemName: item.itemName || product.itemName,
-            requestedQuantity: requestedQuantity,
-            availableStock: availableStock,
-            selectedSize: item.selectedSize || product.size || null
-          };
-        }
-        
-        return null; // Stock is sufficient
-      } catch (productError) {
-        console.error(`Error checking stock for product ${item.productId}:`, productError);
         return {
-          itemName: item.itemName || 'Unknown Product',
-          requestedQuantity: item.quantity,
+          item,
+          product,
+          availableStock: product ? product.stock : 0,
+          productName: product ? product.itemName : 'Unknown'
+        };
+      } catch (err) {
+        console.error(`Error checking stock for item ${item.itemName}:`, err);
+        return {
+          item,
+          product: null,
           availableStock: 0,
-          selectedSize: item.selectedSize || null
+          productName: item.itemName
         };
       }
     });
 
-    // Wait for all stock checks to complete in parallel
-    const stockCheckResults = await Promise.all(stockChecks);
-    const insufficientStockItems = stockCheckResults.filter(result => result !== null);
+    // Wait for all stock checks to complete
+    const stockResults = await Promise.all(stockChecks);
+    
+    // Check for insufficient stock
+    const insufficientStockItems = stockResults.filter(result => {
+      const availableStock = result.availableStock;
+      const requestedQuantity = result.item.quantity;
+      return availableStock < requestedQuantity;
+    });
 
-    // If any items have insufficient stock, return error with details
     if (insufficientStockItems.length > 0) {
       return res.status(400).json({
-        message: 'Nuk ka mjaftueshem stok për disa produkte',
-        insufficientStockItems: insufficientStockItems
+        message: 'Insufficient stock for some items',
+        insufficientStockItems: insufficientStockItems.map(result => ({
+          itemName: result.productName,
+          requestedQuantity: result.item.quantity,
+          availableStock: result.availableStock,
+          selectedSize: result.item.selectedSize || 'N/A'
+        }))
       });
     }
 
+    // Create order
+    const orderNumber = generateOrderNumber();
+    
+    // Calculate totals
     let totalPrice = 0;
     let discountAmount = 0;
-
-    // Calculate total
     items.forEach(item => {
       const itemTotal = item.price * item.quantity;
       const discount = itemTotal * (item.discount / 100);
@@ -226,11 +223,11 @@ router.get('/:email', async (req, res) => {
       discountAmount += discount;
     });
 
-    // Final price includes shipping
+    // Final price includes shipping (0 if free delivery)
     const finalPrice = totalPrice - discountAmount + SHIPPING_COST;
 
     const order = new Order({
-      orderNumber: generateOrderNumber(),
+      orderNumber,
       buyerEmail,
       buyerName,
       items,
@@ -251,6 +248,16 @@ router.get('/:email', async (req, res) => {
     console.error('Order Creation Error:', err.message);
     res.status(400).json({ message: err.message });
   }
+};
+
+// Create order (Client) - primary endpoint
+router.post('/', async (req, res) => {
+  return handleOrderPost(req, res);
+});
+
+// Checkout alias (Client) - backward compatible
+router.post('/checkout', async (req, res) => {
+  return handleOrderPost(req, res);
 });
 
 // Update order status (admin)
@@ -355,8 +362,8 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
 
     // Send confirmation email after DB changes succeed
     if (oldStatus !== 'Confirmed' && nextStatus === 'Confirmed') {
-      const { sendOrderConfirmation } = require('../utils/emailService');
-      sendOrderConfirmation(updatedOrder).catch(err => console.error('Email trigger fail:', err));
+      const emailService = require('../services/emailService');
+      emailService.sendOrderConfirmation(updatedOrder.buyerEmail, updatedOrder).catch(err => console.error('Email trigger fail:', err));
     }
 
     res.json(updatedOrder);

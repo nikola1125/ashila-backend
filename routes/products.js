@@ -66,8 +66,8 @@ function groupVariants(products) {
       const key = product.variantGroupId;
       
       if (!grouped[key]) {
-        // Use the first product as the base
-        const baseProduct = product.toObject();
+        // Use the first product as the base (handle both Mongoose docs and plain objects)
+        const baseProduct = product.toObject ? product.toObject() : product;
         grouped[key] = {
           ...baseProduct,
           _id: baseProduct._id, // Keep the first variant's ID for navigation
@@ -87,7 +87,7 @@ function groupVariants(products) {
         _id: product._id,
         size: product.size || product.dosage || '',
         price: product.price,
-        stock: product.stock,
+        stock: product.stock || 0,
         discount: product.discount || 0,
         image: product.image || product.imageUrl
       });

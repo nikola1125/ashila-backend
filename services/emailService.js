@@ -23,15 +23,19 @@ const smtpTransporter = nodemailer.createTransport({
   }
 });
 
-// Mailjet as backup (if keys are fixed in future)
+// Mailjet as primary email service
 const Mailjet = require('node-mailjet');
 let client = null;
 try {
   client = new Mailjet({
     apiKey: process.env.MAILJET_API_KEY,
-    apiSecret: process.env.MAILJET_SECRET_KEY
+    apiSecret: process.env.MAILJET_SECRET_KEY,
+    options: {
+      timeout: 30000,
+      retryAfter: 5000
+    }
   });
-  console.log('Mailjet initialized successfully');
+  console.log('Mailjet initialized successfully as primary email service');
 } catch (error) {
   console.log('Mailjet failed to initialize, using SMTP only:', error.message);
   client = null;
@@ -44,14 +48,34 @@ class EmailService {
 
   async sendWelcomeEmail(userEmail, userName) {
     try {
-      // Use Gmail SMTP as primary with anti-spam headers
+      // Try Mailjet first
+      if (client) {
+        const result = await client.post('send', { version: 'v3.1' }).request({
+          Messages: [{
+            From: {
+              Email: process.env.MAILJET_SENDER_EMAIL || 'noreply@farmaciashila.com',
+              Name: 'Farmaci Shila'
+            },
+            To: [{
+              Email: userEmail,
+              Name: userName
+            }],
+            Subject: 'Mirësevjen te Farmaci Ashila',
+            HTMLPart: this.getWelcomeTemplate(userName),
+            CustomID: `welcome-${Date.now()}`
+          }]
+        });
+        console.log('Welcome email sent via Mailjet:', result.body);
+        return result;
+      }
+      
+      // Fallback to Gmail SMTP
       const result = await smtpTransporter.sendMail({
         from: `"Farmaci Shila" <${this.senderEmail}>`,
         to: userEmail,
         replyTo: `"Farmaci Shila" <${this.senderEmail}>`,
         subject: 'Mirësevjen te Farmaci Ashila',
         html: this.getWelcomeTemplate(userName),
-        // Enhanced anti-spam headers
         headers: {
           'List-Unsubscribe': `<mailto:${this.senderEmail}?subject=unsubscribe>`,
           'X-Auto-Response-Suppress': 'All',
@@ -63,7 +87,6 @@ class EmailService {
           'Content-Type': 'text/html; charset=UTF-8'
         }
       });
-
       console.log('Welcome email sent via Gmail SMTP:', result.messageId);
       return result;
     } catch (error) {
@@ -74,7 +97,27 @@ class EmailService {
 
   async sendOrderConfirmation(userEmail, orderDetails) {
     try {
-      // Use Gmail SMTP as primary
+      // Try Mailjet first
+      if (client) {
+        const result = await client.post('send', { version: 'v3.1' }).request({
+          Messages: [{
+            From: {
+              Email: process.env.MAILJET_SENDER_EMAIL || 'noreply@farmaciashila.com',
+              Name: 'Farmaci Shila'
+            },
+            To: [{
+              Email: userEmail
+            }],
+            Subject: 'Konfirmim Porosie - Farmaci Ashila',
+            HTMLPart: this.getOrderConfirmationTemplate(orderDetails),
+            CustomID: `order-${orderDetails.orderId || Date.now()}`
+          }]
+        });
+        console.log('Order confirmation sent via Mailjet:', result.body);
+        return result;
+      }
+      
+      // Fallback to Gmail SMTP
       const result = await smtpTransporter.sendMail({
         from: `"Farmaci Shila" <${this.senderEmail}>`,
         to: userEmail,
@@ -82,7 +125,6 @@ class EmailService {
         subject: 'Konfirmim Porosie - Farmaci Ashila',
         html: this.getOrderConfirmationTemplate(orderDetails)
       });
-
       console.log('Order confirmation sent via Gmail SMTP:', result.messageId);
       return result;
     } catch (error) {
@@ -95,7 +137,27 @@ class EmailService {
     try {
       const resetLink = `https://www.farmaciashila.com/reset-password?token=${resetToken}`;
       
-      // Use Gmail SMTP as primary
+      // Try Mailjet first
+      if (client) {
+        const result = await client.post('send', { version: 'v3.1' }).request({
+          Messages: [{
+            From: {
+              Email: process.env.MAILJET_SENDER_EMAIL || 'noreply@farmaciashila.com',
+              Name: 'Farmaci Shila'
+            },
+            To: [{
+              Email: userEmail
+            }],
+            Subject: 'Rivendos Fjalëkalimin - Farmaci Ashila',
+            HTMLPart: this.getPasswordResetTemplate(resetLink),
+            CustomID: `reset-${Date.now()}`
+          }]
+        });
+        console.log('Password reset email sent via Mailjet:', result.body);
+        return result;
+      }
+      
+      // Fallback to Gmail SMTP
       const result = await smtpTransporter.sendMail({
         from: `"Farmaci Shila" <${this.senderEmail}>`,
         to: userEmail,
@@ -103,7 +165,6 @@ class EmailService {
         subject: 'Rivendos Fjalëkalimin - Farmaci Ashila',
         html: this.getPasswordResetTemplate(resetLink)
       });
-
       console.log('Password reset email sent via Gmail SMTP:', result.messageId);
       return result;
     } catch (error) {
@@ -158,53 +219,153 @@ class EmailService {
     `;
   }
 
-  getOrderConfirmationTemplate(orderDetails) {
+  getOrderConfirmationTemplate(order) {
+    return `
+      <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333; background-color: #ffffff; border: 1px solid #e0e0e0;">
+        <!-- Header -->
+        <div style="background-color: #A67856; padding: 30px; text-align: center;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 1px;">INVOICE DETAILS</h1>
+          <p style="color: #e0e0e0; margin: 5px 0 0; font-size: 14px;">Thank you for shopping with Farmaci Ashila</p>
+        </div>
+        
+        <div style="padding: 30px;">
+          <!-- Invoice Info -->
+          <div style="border-bottom: 2px solid #f0f0f0; padding-bottom: 20px; margin-bottom: 30px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap;">
+               <div>
+                  <h2 style="color: #A67856; margin: 0 0 5px; font-size: 18px;">INVOICE #${order.orderId}</h2>
+                  <p style="margin: 0; color: #666; font-size: 12px;">Date: ${new Date().toLocaleDateString()}</p>
+                  <p style="margin: 0; color: #666; font-size: 12px;">Status: <span style="font-weight: bold; color: ${order.paymentStatus === 'paid' ? '#2ecc71' : '#e74c3c'}">${order.paymentStatus?.toUpperCase() || 'CONFIRMED'}</span></p>
+               </div>
+               <div style="text-align: right; margin-top: 10px;">
+                  <h3 style="margin: 0; font-size: 14px; color: #333;">Farmaci Ashila</h3>
+                  <p style="margin: 0; font-size: 12px; color: #777;">Lezhe, Albania</p>
+                  <p style="margin: 0; font-size: 12px; color: #777;">noreply@farmaciashila.com</p>
+               </div>
+            </div>
+          </div>
+
+          <!-- Billing Details -->
+          <div style="margin-bottom: 30px;">
+            <h3 style="font-size: 14px; text-transform: uppercase; color: #888; border-bottom: 1px solid #eee; padding-bottom: 5px;">Billed To</h3>
+            <p style="margin: 10px 0 0; font-weight: bold; color: #333;">${order.buyerName || 'Valued Customer'}</p>
+            <p style="margin: 0; font-size: 14px; color: #666;">
+              ${order.deliveryAddress?.street || ''}<br/>
+              ${order.deliveryAddress?.city || ''}, ${order.deliveryAddress?.postalCode || ''}<br/>
+              ${order.deliveryAddress?.country || 'Albania'}<br/>
+              ${order.deliveryAddress?.phoneNumber ? 'Tel: ' + order.deliveryAddress.phoneNumber : ''}
+            </p>
+          </div>
+          
+          <!-- Order Items -->
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+            <thead>
+              <tr style="background-color: #f8f9fa;">
+                <th style="padding: 12px; text-align: left; font-size: 12px; color: #666; text-transform: uppercase; border-bottom: 2px solid #ddd;">Item Description</th>
+                <th style="padding: 12px; text-align: center; font-size: 12px; color: #666; text-transform: uppercase; border-bottom: 2px solid #ddd;">Qty</th>
+                <th style="padding: 12px; text-align: right; font-size: 12px; color: #666; text-transform: uppercase; border-bottom: 2px solid #ddd;">Price</th>
+                <th style="padding: 12px; text-align: right; font-size: 12px; color: #666; text-transform: uppercase; border-bottom: 2px solid #ddd;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${order.items.map(item => `
+                <tr>
+                  <td style="padding: 12px; border-bottom: 1px solid #eee; font-size: 14px;">
+                    <strong>${item.itemName || item.name}</strong>
+                    ${item.discount && item.discount > 0 ? `
+                      <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                        <span style="text-decoration: line-through; color: #999;">${item.price.toFixed(2)} ALL</span>
+                        <span style="color: #e74c3c; font-weight: bold; margin-left: 8px;">-${Math.round(item.discount)}%</span>
+                      </div>
+                    ` : ''}
+                  </td>
+                   <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center; font-size: 14px;">${item.quantity}</td>
+                  <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; font-size: 14px;">${(item.price * (1 - (item.discount || 0) / 100)).toFixed(2)} ALL</td>
+                  <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; font-size: 14px; font-weight: bold;">${(item.price * (1 - (item.discount || 0) / 100) * item.quantity).toFixed(2)} ALL</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <!-- Totals -->
+          <div style="display: flex; justify-content: flex-end;">
+            <div style="width: 250px;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px; color: #666; font-size: 14px;">Subtotal:</td>
+                  <td style="padding: 8px; text-align: right; color: #333; font-size: 14px;">${(order.totalPrice || 0).toFixed(2)} ALL</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px; color: #666; font-size: 14px;">Discount:</td>
+                  <td style="padding: 8px; text-align: right; color: #e74c3c; font-size: 14px;">- ${(order.discountAmount || 0).toFixed(2)} ALL</td>
+                </tr>
+                 <tr>
+                  <td style="padding: 8px; color: #666; font-size: 14px;">${(order.shippingCost && order.shippingCost > 0) ? 'Shipping:' : 'Shipping:'}</td>
+                  <td style="padding: 8px; text-align: right; color: #333; font-size: 14px;">${(order.shippingCost && order.shippingCost > 0) ? (order.shippingCost).toFixed(2) : '0'} lek</td>
+                </tr>
+                <tr style="border-top: 2px solid #A67856;">
+                  <td style="padding: 12px 8px; font-weight: bold; color: #A67856; font-size: 16px;">TOTAL DUE:</td>
+                  <td style="padding: 12px 8px; text-align: right; font-weight: bold; color: #A67856; font-size: 16px;">${(order.finalPrice || 0).toFixed(2)} ALL</td>
+                </tr>
+              </table>
+            </div>
+          </div>
+          
+          <!-- Note -->
+           <div style="margin-top: 40px; background-color: #f9f7f4; padding: 15px; border-left: 4px solid #A67856; font-size:13px; color: #555;">
+             <p style="margin: 0;"><strong>Note:</strong> ${order.shippingCost && order.shippingCost > 0 ? 'Payment will be collected upon delivery (Cash on Delivery).' : 'FREE delivery - Payment will be collected upon delivery.'} Please retain this invoice for your records.</p>
+          </div>
+
+        </div>
+
+        <!-- Footer -->
+        <div style="background-color: #4A3628; color: #888; padding: 20px; text-align: center; font-size: 12px;">
+          <p style="margin: 0;">&copy; ${new Date().getFullYear()} Farmaci Ashila. All rights reserved.</p>
+          <p style="margin: 5px 0 0;">This email was sent to ${order.buyerEmail}</p>
+          <hr style="border: none; border-top: 1px solid #666; margin: 20px 0;">
+          <p style="font-size: 10px; color: #999; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 10px 0 0;">Crafted by N & S Tech Studio</p>
+          <p style="font-size: 9px; color: #aaa; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 5px 0 0;">down</p>
+        </div>
+      </div>
+    `;
+  }
+
+  getPasswordResetTemplate(resetLink) {
     return `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
-        <title>Konfirmim Porosie - Farmaci Ashila</title>
+        <title>Rivendos Fjalëkalimin - Farmaci Ashila</title>
         <style>
           body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
           .container { max-width: 600px; margin: 0 auto; padding: 20px; }
           .header { background: #A67856; color: white; padding: 20px; text-align: center; }
           .content { padding: 20px; background: #F5EDE4; }
           .footer { background: #4A3628; color: white; padding: 15px; text-align: center; font-size: 12px; }
-          .order-item { border-bottom: 1px solid #ddd; padding: 10px 0; }
-          .total { font-weight: bold; font-size: 18px; margin-top: 20px; }
+          .btn { display: inline-block; padding: 12px 24px; background: #A67856; color: white; text-decoration: none; border-radius: 4px; margin: 10px 0; }
         </style>
       </head>
       <body>
         <div class="container">
           <div class="header">
             <h1>Farmaci Ashila</h1>
-            <p>Konfirmim Porosie</p>
+            <p>Rivendos Fjalëkalimin</p>
           </div>
           <div class="content">
-            <h2>Faleminderit për porosinë tuaj!</h2>
-            <p>Porosia juaj #${orderDetails.orderId} është pranuar dhe do të përpunohet së shpejti.</p>
-            
-            <h3>Detajet e Porosisë:</h3>
-            ${orderDetails.items.map(item => `
-              <div class="order-item">
-                <strong>${item.name}</strong><br>
-                Sasia: ${item.quantity} | Çmimi: ${item.price} ALL
-              </div>
-            `).join('')}
-            
-            <div class="total">
-              Total: ${orderDetails.total} ALL
-            </div>
-            
-            <p><strong>Adresa e Dërgesës:</strong><br>
-            ${orderDetails.address}</p>
-            
-            <p>Do t'ju njoftojmë sapo porosia të dërgohet.</p>
+            <h2>Rivendos Fjalëkalimin</h2>
+            <p>Kërkoni një rivendosje të fjalëkalimit tuaj. Klikoni butonin më poshtë për të vendosur një fjalëkalim të ri.</p>
+            <a href="${resetLink}" class="btn">Rivendos Fjalëkalimin</a>
+            <p>Nëse nuk kërkoni rivendosje të fjalëkalimit, ju lutemi shpërbreni këtë email.</p>
+            <p>Për çdo pyetje, na kontaktoni:</p>
+            <p>📧 noreply@farmaciashila.com<br>📞 +355 68 687 9292</p>
+            <p><small>Kjo lidhje do të skadojë pas 1 ore.</small></p>
           </div>
           <div class="footer">
             <p>© 2024 Farmaci Ashila. Të gjitha të drejtat e rezervuara.</p>
-            <p>Do t'ju njoftojmë sapo porosia të dërgohet.</p>
+            <p>Kjo email është e automatizuar. Ju lutemi mos i përgjigjeni këtij email-i.</p>
+            <p>Farmaci Ashila, Lezhe, Albania</p>
+            <p>Tel: +355 68 687 9292 | Web: www.farmaciashila.com</p>
             <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 20px 0;">
             <p style="font-size: 10px; color: #999; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 10px 0 0;">Crafted by N & S Tech Studio</p>
             <p style="font-size: 9px; color: #aaa; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 5px 0 0;">down</p>
