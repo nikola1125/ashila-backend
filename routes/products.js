@@ -279,11 +279,31 @@ router.get('/:id', async (req, res) => {
 
 // Create product (seller/admin) with R2 metadata
 router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('image'), async (req, res) => {
+  console.log('=== PRODUCT CREATE REQUEST RECEIVED ===');
+  console.log('Request headers:', req.headers['content-type']);
+  console.log('Request body keys:', Object.keys(req.body));
+  console.log('File uploaded:', req.file ? 'YES' : 'NO');
+  if (req.file) {
+    console.log('File details:', {
+      originalname: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+  }
+  console.log('=====================================');
+  
   try {
-    let imageUrl = req.body.imageUrl || req.body.image || null;
+    let imageUrl = req.body.imageUrl || req.body.image || '';
+    let imageId = req.body.imageId || '';
 
     // Upload image to R2 if file exists
     if (req.file) {
+      console.log('Image upload detected:', {
+        filename: req.file.originalname,
+        size: req.file.size,
+        mimetype: req.file.mimetype
+      });
+      
       const { uploadToCloudflare } = require('../utils/cloudflare');
       try {
         // Process image with optimal size for our frontend
@@ -294,13 +314,15 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
           quality: 80,
           format: 'webp'
         });
+        
+        console.log('Image uploaded successfully to R2:', imageUrl);
       } catch (uploadError) {
         console.error('Image upload failed:', uploadError);
         return res.status(500).json({ message: 'Failed to upload image: ' + uploadError.message });
       }
+    } else {
+      console.log('No image file provided in request');
     }
-
-    const imageId = req.body.imageId || null;
     // Handle variants - can be array (JSON) or string (form-data)
     let variants = [];
     if (req.body.variants) {
@@ -350,9 +372,6 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
       options: options, // New: Multiple options support
       price: req.body.price,
       discount: req.body.discount || 0,
-      image: imageUrl,
-      imageUrl: imageUrl,
-      imageId: imageId,
       description: req.body.description,
       sellerEmail: sellerEmail,
       dosage: req.body.dosage,
@@ -363,6 +382,20 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
       skinProblem: req.body.skinProblem,
       variants: [] // Keep variants array empty for backward compatibility
     };
+
+    // Only assign image fields if they have actual values (not null, undefined, or empty string)
+    if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
+      baseProductData.image = imageUrl;
+      baseProductData.imageUrl = imageUrl;
+      console.log('Image data assigned to product:', {
+        image: imageUrl,
+        imageUrl: imageUrl,
+        productId: baseProductData._id || 'new'
+      });
+    }
+    if (imageId && typeof imageId === 'string' && imageId.trim() !== '') {
+      baseProductData.imageId = imageId;
+    }
 
     let savedProducts = [];
     let variantGroupId = null;

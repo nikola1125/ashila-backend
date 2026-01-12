@@ -18,7 +18,9 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
   'https://medimart-two.vercel.app', // Add any extra production domains
   'https://www.farmaciashila.com',
-  'https://farmaciashila.com'
+  'https://farmaciashila.com',
+  'http://localhost:5174', // Development frontend
+  'http://localhost:5173'  // Alternative development port
 ].filter(Boolean);
 
 app.use(cors({

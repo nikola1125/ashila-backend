@@ -27,8 +27,26 @@ const productSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  image: String,
-  imageUrl: String,
+  image: {
+    type: String,
+    set: function(val) {
+      // Convert to string and handle null/undefined/object cases
+      if (val === null || val === undefined || typeof val === 'object') {
+        return '';
+      }
+      return String(val);
+    }
+  },
+  imageUrl: {
+    type: String,
+    set: function(val) {
+      // Convert to string and handle null/undefined/object cases
+      if (val === null || val === undefined || typeof val === 'object') {
+        return '';
+      }
+      return String(val);
+    }
+  },
   imageId: String,
   description: String,
   size: String,

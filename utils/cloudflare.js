@@ -25,15 +25,15 @@ async function uploadToCloudflare(buffer, originalName, options = {}) {
         format = 'webp'
     } = options;
 
-    const bucketName = process.env.R2_BUCKET_NAME;
-    const accountId = process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID;
-    const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-    const publicUrl = process.env.R2_PUBLIC_URL;
+    const bucketName = process.env.R2_BUCKET_NAME?.trim();
+    const accountId = (process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID)?.trim();
+    const accessKeyId = process.env.R2_ACCESS_KEY_ID?.trim();
+    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim();
+    const publicUrl = process.env.R2_PUBLIC_URL?.trim();
 
     console.log('--- R2 CONFIG CHECK ---');
     console.log('Bucket:', bucketName || 'MISSING');
-    console.log('Account ID:', accountId ? 'PRESENT' : 'MISSING');
+    console.log('Account ID:', accountId ? `${accountId.substring(0, 4)}... (Length: ${accountId.length})` : 'MISSING');
     console.log('Access Key:', accessKeyId ? 'PRESENT' : 'MISSING');
     console.log('Secret Key:', secretAccessKey ? 'PRESENT' : 'MISSING');
     console.log('Public URL:', publicUrl || 'MISSING');
@@ -47,7 +47,7 @@ async function uploadToCloudflare(buffer, originalName, options = {}) {
         // Validate and process image
         await validateImage(buffer, { originalname: originalName });
         console.log(`Processing image: ${originalName} -> ${width}x${height} ${format}`);
-        
+
         const processedBuffer = await processImage(buffer, {
             width,
             height,
@@ -55,16 +55,20 @@ async function uploadToCloudflare(buffer, originalName, options = {}) {
             format
         });
 
+        console.log('Image processed successfully, buffer size:', processedBuffer.length);
+
         const fileName = `${Date.now()}-${originalName?.replace(/\.[^/.]+$/, '') || 'image'}.${format}`.replace(/\s+/g, '-');
 
         const r2 = new S3Client({
             region: 'auto',
             endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
             credentials: {
-                accessKeyId: accessKeyId,
-                secretAccessKey: secretAccessKey,
+                accessKeyId,
+                secretAccessKey,
             },
         });
+
+        console.log('Starting R2 upload for file:', fileName);
 
         const upload = new Upload({
             client: r2,
@@ -76,11 +80,20 @@ async function uploadToCloudflare(buffer, originalName, options = {}) {
             },
         });
 
+        console.log('Upload params:', {
+            Bucket: bucketName,
+            Key: fileName,
+            ContentType: `image/${format}`,
+            BufferLength: processedBuffer.length
+        });
+
         await upload.done();
+
+        console.log('R2 upload completed successfully');
 
         const baseUrl = publicUrl.endsWith('/') ? publicUrl.slice(0, -1) : publicUrl;
         const finalUrl = `${baseUrl}/${fileName}`;
-        
+
         console.log(`✅ Image uploaded and processed: ${finalUrl}`);
         return finalUrl;
 
@@ -98,11 +111,11 @@ async function deleteFromCloudflare(imageUrl) {
     if (!imageUrl) return;
 
     try {
-        const bucketName = process.env.R2_BUCKET_NAME;
-        const accountId = process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID;
-        const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-        const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-        const publicUrl = process.env.R2_PUBLIC_URL;
+        const bucketName = process.env.R2_BUCKET_NAME?.trim();
+        const accountId = (process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID)?.trim();
+        const accessKeyId = process.env.R2_ACCESS_KEY_ID?.trim();
+        const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim();
+        const publicUrl = process.env.R2_PUBLIC_URL?.trim();
 
         if (!bucketName || !accountId || !accessKeyId || !secretAccessKey) {
             console.warn('Missing R2 credentials for deletion. Skipping.');
