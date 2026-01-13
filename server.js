@@ -30,7 +30,7 @@ app.use(cors({
     if (allowedOrigins.indexOf(origin) === -1) {
       // For production mobile troubleshooting, it's safer to allow the request
       // but you can restrict it further once working.
-      return callback(null, true); 
+      return callback(null, true);
     }
     return callback(null, true);
   },
@@ -43,8 +43,8 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI)
-.then(() => console.log('✓ MongoDB connected'))
-.catch(err => console.error('MongoDB connection error:', err));
+  .then(() => console.log('✓ MongoDB connected'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
 app.use('/users', require('./routes/users'));
@@ -55,6 +55,9 @@ app.use('/orders', require('./routes/orders'));
 app.use('/reviews', require('./routes/reviews'));
 app.use('/admin', require('./routes/adminAuth'));
 app.use('/settings', require('./routes/settings'));
+app.use('/seo', require('./routes/seo'));
+app.use('/sitemap.xml', require('./routes/seo')); // Allow direct access to /sitemap.xml at root too
+
 
 // Health check
 app.get('/health', (req, res) => {
