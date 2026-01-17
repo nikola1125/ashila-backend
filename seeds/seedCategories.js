@@ -9,17 +9,17 @@ const seedCategories = async () => {
       console.error('❌ MONGODB_URI is not defined in .env file');
       process.exit(1);
     }
-    
+
     // Ensure database name is included
     let connectionString = MONGODB_URI.trim();
     if (!connectionString.endsWith('/') && !connectionString.includes('?')) {
       if (!connectionString.match(/\/[^\/\?]+(\?|$)/)) {
-        connectionString = connectionString.endsWith('/') 
-          ? connectionString + 'medi-mart' 
+        connectionString = connectionString.endsWith('/')
+          ? connectionString + 'medi-mart'
           : connectionString + '/medi-mart';
       }
     }
-    
+
     await mongoose.connect(connectionString);
     console.log('✓ Connected to MongoDB');
 
@@ -102,12 +102,28 @@ const seedCategories = async () => {
             subitems: []
           }
         ]
+      },
+      {
+        categoryName: 'Set',
+        description: 'Product sets',
+        groups: [
+          {
+            groupName: 'Kategorite',
+            subitems: [
+              { name: 'Set per fytyren' },
+              { name: 'Set per trupin' },
+              { name: 'Set per floket' },
+              { name: 'Set per nena' },
+              { name: 'Set per femije' }
+            ]
+          }
+        ]
       }
     ];
 
     const savedCategories = await Category.insertMany(categories);
     console.log('✓ Categories seeded successfully:', savedCategories.length);
-    
+
     process.exit(0);
   } catch (error) {
     console.error('Error seeding categories:', error);
