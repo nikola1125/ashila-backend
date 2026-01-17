@@ -11,7 +11,8 @@ async function processImage(buffer, options = {}) {
     width = 1000,
     height = 1000,
     quality = 80,
-    format = 'webp'
+    format = 'webp',
+    fit = 'cover'
   } = options;
 
   try {
@@ -28,7 +29,7 @@ async function processImage(buffer, options = {}) {
     // Resize and process
     const processedBuffer = await sharpInstance
       .resize(width, height, {
-        fit: 'cover',
+        fit: fit,
         position: 'center',
         background: { r: 255, g: 255, b: 255, alpha: 1 }
       })
@@ -59,7 +60,7 @@ async function createImageSizes(buffer) {
 
   try {
     const results = {};
-    
+
     for (const [sizeName, options] of Object.entries(sizes)) {
       results[sizeName] = await processImage(buffer, options);
     }
@@ -87,7 +88,7 @@ async function validateImage(buffer, file) {
     // Check file type
     const metadata = await sharp(buffer).metadata();
     const validFormats = ['jpeg', 'jpg', 'png', 'webp', 'gif', 'tiff'];
-    
+
     if (!validFormats.includes(metadata.format.toLowerCase())) {
       throw new Error(`Invalid image format: ${metadata.format}. Allowed formats: ${validFormats.join(', ')}`);
     }

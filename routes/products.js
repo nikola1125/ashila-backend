@@ -53,18 +53,18 @@ function groupVariants(products) {
   const grouped = {};
   const ungrouped = [];
   const processedIds = new Set(); // Track processed product IDs to prevent duplicates
-  
+
   // First pass: collect all products with variantGroupId
   products.forEach(product => {
     // Skip if already processed (prevent duplicates)
     if (processedIds.has(product._id.toString())) {
       return;
     }
-    
+
     // If product has variantGroupId, group by it
     if (product.variantGroupId) {
       const key = product.variantGroupId;
-      
+
       if (!grouped[key]) {
         // Use the first product as the base (handle both Mongoose docs and plain objects)
         const baseProduct = product.toObject ? product.toObject() : product;
@@ -81,7 +81,7 @@ function groupVariants(products) {
         delete grouped[key].size;
         delete grouped[key].stock;
       }
-      
+
       // Add variant info
       grouped[key].variants.push({
         _id: product._id,
@@ -91,14 +91,14 @@ function groupVariants(products) {
         discount: product.discount || 0,
         image: product.image || product.imageUrl
       });
-      
+
       // Update price range
       grouped[key].minPrice = Math.min(grouped[key].minPrice, product.price);
       grouped[key].maxPrice = Math.max(grouped[key].maxPrice, product.price);
-      
+
       // Update total stock
       grouped[key].totalStock += (product.stock || 0);
-      
+
       // Mark as processed
       processedIds.add(product._id.toString());
     } else {
@@ -110,7 +110,7 @@ function groupVariants(products) {
       }
     }
   });
-  
+
   // Return grouped products + ungrouped products
   return [...Object.values(grouped), ...ungrouped];
 }
@@ -124,7 +124,7 @@ router.get('/latest', async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(16)
       .lean();
-    
+
     if (group === 'true') {
       const groupedProducts = groupVariants(products);
       res.json({ medicines: groupedProducts, result: groupedProducts });
@@ -186,7 +186,7 @@ router.get('/bestsellers', async (req, res) => {
       isBestseller: true,
       isActive: true
     };
-    
+
     // If grouping is requested, find all variants of bestseller products
     if (group === 'true') {
       // First, get all bestseller products (no limit yet)
@@ -194,39 +194,39 @@ router.get('/bestsellers', async (req, res) => {
         .populate('category')
         .sort({ createdAt: -1 })
         .lean();
-      
+
       // Collect all variantGroupIds from bestseller products
       const variantGroupIds = bestsellerProducts
         .filter(p => p.variantGroupId)
         .map(p => p.variantGroupId);
-      
+
       // Also collect unique variantGroupIds (remove duplicates)
       const uniqueVariantGroupIds = [...new Set(variantGroupIds)];
-      
+
       // Find all products that are either:
       // 1. Marked as bestseller directly, OR
       // 2. Part of a variant group that has at least one bestseller
       const queryConditions = [
         { isBestseller: true, isActive: true }
       ];
-      
+
       if (uniqueVariantGroupIds.length > 0) {
         queryConditions.push({ variantGroupId: { $in: uniqueVariantGroupIds }, isActive: true });
       }
-      
+
       const allProducts = await Product.find({
         $or: queryConditions
       })
         .populate('category')
         .sort({ createdAt: -1 })
         .lean();
-      
+
       // Group variants together
       const groupedProducts = groupVariants(allProducts);
-      
+
       // Limit to 20 grouped products after grouping
       const limitedGroupedProducts = groupedProducts.slice(0, 20);
-      
+
       res.json({ result: limitedGroupedProducts });
     } else {
       // No grouping - return individual products with limit
@@ -291,7 +291,7 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
     });
   }
   console.log('=====================================');
-  
+
   try {
     let imageUrl = req.body.imageUrl || req.body.image || '';
     let imageId = req.body.imageId || '';
@@ -303,18 +303,19 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
         size: req.file.size,
         mimetype: req.file.mimetype
       });
-      
+
       const { uploadToCloudflare } = require('../utils/cloudflare');
       try {
         // Process image with optimal size for our frontend
         // Using 1000x1000 for high quality display
         imageUrl = await uploadToCloudflare(req.file.buffer, req.file.originalname, {
-          width: 1000,
-          height: 1000,
+          width: 500,
+          height: 500,
           quality: 80,
-          format: 'webp'
+          format: 'webp',
+          fit: 'cover'
         });
-        
+
         console.log('Image uploaded successfully to R2:', imageUrl);
       } catch (uploadError) {
         console.error('Image upload failed:', uploadError);
@@ -411,12 +412,12 @@ router.post('/', requireAuth, requireRole(['seller', 'admin']), upload.single('i
       if (variantGroupId) {
         const existingProducts = await Product.find({ variantGroupId: variantGroupId });
         const existingSizes = existingProducts.map(p => (p.size || p.dosage || '').toLowerCase().trim());
-        
+
         for (const variant of variants) {
           const variantSize = (variant.size || '').toLowerCase().trim();
           if (variantSize && existingSizes.includes(variantSize)) {
-            return res.status(400).json({ 
-              message: `A variant with size "${variant.size}" already exists for this product. Please use a different size or edit the existing variant.` 
+            return res.status(400).json({
+              message: `A variant with size "${variant.size}" already exists for this product. Please use a different size or edit the existing variant.`
             });
           }
         }
@@ -472,10 +473,11 @@ router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), upload.singl
       try {
         // Process image with optimal size for our frontend
         const imageUrl = await uploadToCloudflare(req.file.buffer, req.file.originalname, {
-          width: 1000,
-          height: 1000,
+          width: 500,
+          height: 500,
           quality: 80,
-          format: 'webp'
+          format: 'webp',
+          fit: 'cover'
         });
         req.body.image = imageUrl;
         req.body.imageUrl = imageUrl;
@@ -520,12 +522,12 @@ router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), upload.singl
     // mark all variants in the group as bestseller
     const isMarkingBestseller = req.body.isBestseller === 'true' || req.body.isBestseller === true;
     const bestsellerCategory = req.body.bestsellerCategory || product.bestsellerCategory;
-    
+
     if (isMarkingBestseller && product.variantGroupId) {
       // Mark all products in the same variant group as bestseller
       await Product.updateMany(
         { variantGroupId: product.variantGroupId },
-        { 
+        {
           isBestseller: true,
           bestsellerCategory: bestsellerCategory,
           updatedAt: Date.now()
@@ -537,7 +539,7 @@ router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), upload.singl
       if (product.variantGroupId) {
         await Product.updateMany(
           { variantGroupId: product.variantGroupId },
-          { 
+          {
             isBestseller: false,
             bestsellerCategory: null,
             updatedAt: Date.now()

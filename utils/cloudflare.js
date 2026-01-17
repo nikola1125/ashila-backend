@@ -22,7 +22,8 @@ async function uploadToCloudflare(buffer, originalName, options = {}) {
         width = 1000,
         height = 1000,
         quality = 80,
-        format = 'webp'
+        format = 'webp',
+        fit = 'cover'
     } = options;
 
     const bucketName = process.env.R2_BUCKET_NAME?.trim();
@@ -46,13 +47,14 @@ async function uploadToCloudflare(buffer, originalName, options = {}) {
     try {
         // Validate and process image
         await validateImage(buffer, { originalname: originalName });
-        console.log(`Processing image: ${originalName} -> ${width}x${height} ${format}`);
+        console.log(`Processing image: ${originalName} -> ${width}x${height} ${format} (${fit})`);
 
         const processedBuffer = await processImage(buffer, {
             width,
             height,
             quality,
-            format
+            format,
+            fit
         });
 
         console.log('Image processed successfully, buffer size:', processedBuffer.length);
