@@ -28,7 +28,10 @@ router.get('/', async (req, res) => {
       ];
     }
 
-    let query = Product.find(filter).populate('category').lean();
+    let query = Product.find(filter)
+      .select('-description') // Exclude heavy description field
+      .populate('category')
+      .lean();
 
     if (limit) {
       query = query.limit(parseInt(limit));
