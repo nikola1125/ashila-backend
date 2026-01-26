@@ -1,5 +1,8 @@
 const express = require('express');
 const Product = require('../models/Product');
+const SlugService = require('../services/SlugService');
+const googleIndexingService = require('../services/GoogleIndexingService');
+const sitemapService = require('../services/SitemapService');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const multer = require('multer');
 const upload = multer({
@@ -553,10 +556,69 @@ router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), upload.singl
 
     Object.assign(product, req.body);
     product.updatedAt = Date.now();
+    
+    // Handle slug changes for SEO
+    const oldSlug = product.slug;
+    if (req.body.itemName || req.body.company || req.body.size) {
+      const newSlug = await SlugService.generateUniqueSlug(
+        req.body.itemName || product.itemName,
+        req.body.company || product.company,
+        req.body.size || product.size,
+        product._id
+      );
+      
+      if (oldSlug && oldSlug !== newSlug) {
+        await SlugService.handleSlugChange(product._id, oldSlug, newSlug);
+      }
+      
+      product.slug = newSlug;
+    }
+    
     const updatedProduct = await product.save();
+    
+    // Trigger SEO services after product update
+    setImmediate(async () => {
+      try {
+        // Notify Google Indexing API
+        if (product.slug && product.isActive) {
+          await googleIndexingService.indexProduct(product.slug, product.categoryName);
+        }
+        
+        // Regenerate sitemap (async, non-blocking)
+        await sitemapService.regenerateAndNotify();
+      } catch (error) {
+        console.error('SEO service error after product update:', error);
+      }
+    });
+    
     res.json(updatedProduct);
   } catch (err) {
     res.status(400).json({ message: err.message });
+  }
+});
+
+// Get product by slug or redirect
+router.get('/slug/:slug', async (req, res) => {
+  try {
+    const { product, redirected, newSlug } = await SlugService.findBySlugOrRedirect(req.params.slug);
+    
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+    
+    if (redirected && newSlug) {
+      // Return redirect information
+      return res.json({ 
+        product, 
+        redirected: true, 
+        newSlug,
+        redirectUrl: `/api/products/slug/${newSlug}`
+      });
+    }
+    
+    res.json({ product, redirected: false });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 

@@ -5,6 +5,11 @@ const productSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  slug: {
+    type: String,
+    unique: true,
+    sparse: true // Allow multiple null values initially
+  },
   skinProblem: String, // e.g. "papules", "cyst"
   genericName: String,
   company: String,
@@ -116,6 +121,7 @@ const productSchema = new mongoose.Schema({
 
 // Add indexes for better query performance
 productSchema.index({ itemName: 1 });
+productSchema.index({ slug: 1 });
 productSchema.index({ categoryName: 1 });
 productSchema.index({ variantGroupId: 1 });
 productSchema.index({ seller: 1 });
@@ -127,5 +133,37 @@ productSchema.index({ options: 1 }); // New: Index for multiple options
 productSchema.index({ categoryName: 1, isActive: 1 });
 productSchema.index({ subcategory: 1, isActive: 1 });
 productSchema.index({ productType: 1, isActive: 1 });
+
+// Pre-save middleware to generate slug
+productSchema.pre('save', function(next) {
+  if (this.isModified('itemName') || this.isModified('company') || this.isModified('size')) {
+    this.slug = this.generateSlug();
+  }
+  next();
+});
+
+// Instance method to generate slug
+productSchema.methods.generateSlug = function() {
+  if (!this.itemName) return '';
+  
+  let slug = this.itemName
+    .toString()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-');
+
+  if (this.company && this.company !== this.itemName) {
+    slug += `-${this.company.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+  }
+  
+  if (this.size) {
+    slug += `-${this.size.toLowerCase().replace(/\s+/g, '-')}`;
+  }
+
+  return slug;
+};
 
 module.exports = mongoose.model('Product', productSchema);
