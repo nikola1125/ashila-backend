@@ -43,7 +43,7 @@ class OpenGraphService {
       // Generate new OG image
       await this.createOGImage({
         title: product.itemName,
-        subtitle: product.company || 'Farmaci Shila',
+        subtitle: product.company || 'Farmaci Ashila',
         price: `${product.price} ALL`,
         category: product.categoryName || 'Mjekësi',
         outputPath,
@@ -203,7 +203,7 @@ class OpenGraphService {
       return '/og-images/og-default.png';
     } catch {
       await this.createOGImage({
-        title: 'Farmaci Shila',
+        title: 'Farmaci Ashila',
         subtitle: 'Kujdes Shëndetësor & Produkte Mjekësore',
         category: 'Farmaci Online në Shqipëri',
         outputPath,

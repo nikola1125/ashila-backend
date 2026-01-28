@@ -54,7 +54,7 @@ class EmailService {
           Messages: [{
             From: {
               Email: process.env.MAILJET_SENDER_EMAIL || 'noreply@farmaciashila.com',
-              Name: 'Farmaci Shila'
+              Name: 'Farmaci Ashila'
             },
             To: [{
               Email: userEmail,
@@ -71,9 +71,9 @@ class EmailService {
       
       // Fallback to Gmail SMTP
       const result = await smtpTransporter.sendMail({
-        from: `"Farmaci Shila" <${this.senderEmail}>`,
+        from: `"Farmaci Ashila" <${this.senderEmail}>`,
         to: userEmail,
-        replyTo: `"Farmaci Shila" <${this.senderEmail}>`,
+        replyTo: `"Farmaci Ashila" <${this.senderEmail}>`,
         subject: 'Mirësevjen te Farmaci Ashila',
         html: this.getWelcomeTemplate(userName),
         headers: {
@@ -103,7 +103,7 @@ class EmailService {
           Messages: [{
             From: {
               Email: process.env.MAILJET_SENDER_EMAIL || 'noreply@farmaciashila.com',
-              Name: 'Farmaci Shila'
+              Name: 'Farmaci Ashila'
             },
             To: [{
               Email: userEmail
@@ -119,9 +119,9 @@ class EmailService {
       
       // Fallback to Gmail SMTP
       const result = await smtpTransporter.sendMail({
-        from: `"Farmaci Shila" <${this.senderEmail}>`,
+        from: `"Farmaci Ashila" <${this.senderEmail}>`,
         to: userEmail,
-        replyTo: `"Farmaci Shila" <${this.senderEmail}>`,
+        replyTo: `"Farmaci Ashila" <${this.senderEmail}>`,
         subject: 'Konfirmim Porosie - Farmaci Ashila',
         html: this.getOrderConfirmationTemplate(orderDetails)
       });
@@ -143,7 +143,7 @@ class EmailService {
           Messages: [{
             From: {
               Email: process.env.MAILJET_SENDER_EMAIL || 'noreply@farmaciashila.com',
-              Name: 'Farmaci Shila'
+              Name: 'Farmaci Ashila'
             },
             To: [{
               Email: userEmail
@@ -159,9 +159,9 @@ class EmailService {
       
       // Fallback to Gmail SMTP
       const result = await smtpTransporter.sendMail({
-        from: `"Farmaci Shila" <${this.senderEmail}>`,
+        from: `"Farmaci Ashila" <${this.senderEmail}>`,
         to: userEmail,
-        replyTo: `"Farmaci Shila" <${this.senderEmail}>`,
+        replyTo: `"Farmaci Ashila" <${this.senderEmail}>`,
         subject: 'Rivendos Fjalëkalimin - Farmaci Ashila',
         html: this.getPasswordResetTemplate(resetLink)
       });

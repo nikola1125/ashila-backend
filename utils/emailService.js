@@ -124,9 +124,9 @@ const sendOrderConfirmation = async (order) => {
 
   try {
     const result = await smtpTransporter.sendMail({
-      from: `"Farmaci Shila" <${process.env.EMAIL_USER || 'farmaciashila11@gmail.com'}>`,
+      from: `"Farmaci Ashila" <${process.env.EMAIL_USER || 'farmaciashila11@gmail.com'}>`,
       to: order.buyerEmail,
-      replyTo: `"Farmaci Shila" <${process.env.EMAIL_USER || 'farmaciashila11@gmail.com'}>`,
+      replyTo: `"Farmaci Ashila" <${process.env.EMAIL_USER || 'farmaciashila11@gmail.com'}>`,
       subject: `Order Confirmation #${order.orderNumber}`,
       html: htmlContent
     });
