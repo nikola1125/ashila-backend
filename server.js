@@ -79,10 +79,10 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
-const BASE_URL = process.env.NODE_ENV === 'production' 
+const HOST = '0.0.0.0';
+const BASE_URL = process.env.NODE_ENV === 'production'
   ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'your-app.onrender.com'}`
-  : `http://${HOST}:${PORT}`;
+  : `http://localhost:${PORT}`;
 
 app.listen(PORT, HOST, () => {
   console.log(`\n✓ Server running on ${BASE_URL}`);
