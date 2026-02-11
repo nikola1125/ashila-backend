@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { generateInvoicePDF } = require('./pdfService');
 
 // Primary Gmail SMTP transporter
 const smtpTransporter = nodemailer.createTransport({
@@ -68,7 +69,7 @@ class EmailService {
         console.log('Welcome email sent via Mailjet:', result.body);
         return result;
       }
-      
+
       // Fallback to Gmail SMTP
       const result = await smtpTransporter.sendMail({
         from: `"Farmaci Ashila" <${this.senderEmail}>`,
@@ -97,6 +98,19 @@ class EmailService {
 
   async sendOrderConfirmation(userEmail, orderDetails) {
     try {
+      // Generate PDF Invoice
+      console.log('Generating PDF invoice for order:', orderDetails.orderNumber || orderDetails._id);
+      const pdfBuffer = await generateInvoicePDF(orderDetails);
+      const base64Pdf = pdfBuffer.toString('base64');
+      const invoiceFilename = `Invoice-${orderDetails.orderNumber || 'Order'}.pdf`;
+
+      // Base URL for download link (detect environment)
+      const port = process.env.PORT || 5001;
+      const isDev = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+      const baseUrl = process.env.BACKEND_URL || (isDev ? `http://localhost:${port}` : 'https://ashila-backend.onrender.com');
+      const downloadLink = `${baseUrl}/orders/${orderDetails._id}/download-pdf`;
+      console.log(`[DEBUG] Generated PDF download link: ${downloadLink}`);
+
       // Try Mailjet first
       if (client) {
         const result = await client.post('send', { version: 'v3.1' }).request({
@@ -110,22 +124,36 @@ class EmailService {
             }],
             Subject: 'Konfirmim Porosie - Farmaci Ashila',
             HTMLPart: this.getOrderConfirmationTemplate(orderDetails),
-            CustomID: `order-${orderDetails.orderId || Date.now()}`
+            Attachments: [
+              {
+                ContentType: "application/pdf",
+                Filename: invoiceFilename,
+                Base64Content: base64Pdf
+              }
+            ],
+            CustomID: `order-${orderDetails.orderNumber || orderDetails._id}`
           }]
         });
-        console.log('Order confirmation sent via Mailjet:', result.body);
+        console.log('Order confirmation sent via Mailjet with PDF attachment:', result.body);
         return result;
       }
-      
+
       // Fallback to Gmail SMTP
       const result = await smtpTransporter.sendMail({
         from: `"Farmaci Ashila" <${this.senderEmail}>`,
         to: userEmail,
         replyTo: `"Farmaci Ashila" <${this.senderEmail}>`,
         subject: 'Konfirmim Porosie - Farmaci Ashila',
-        html: this.getOrderConfirmationTemplate(orderDetails)
+        html: this.getOrderConfirmationTemplate(orderDetails),
+        attachments: [
+          {
+            filename: invoiceFilename,
+            content: pdfBuffer,
+            contentType: 'application/pdf'
+          }
+        ]
       });
-      console.log('Order confirmation sent via Gmail SMTP:', result.messageId);
+      console.log('Order confirmation sent via Gmail SMTP with PDF attachment:', result.messageId);
       return result;
     } catch (error) {
       console.error('Error sending order confirmation:', error);
@@ -136,7 +164,7 @@ class EmailService {
   async sendPasswordReset(userEmail, resetToken) {
     try {
       const resetLink = `https://www.farmaciashila.com/reset-password?token=${resetToken}`;
-      
+
       // Try Mailjet first
       if (client) {
         const result = await client.post('send', { version: 'v3.1' }).request({
@@ -156,7 +184,7 @@ class EmailService {
         console.log('Password reset email sent via Mailjet:', result.body);
         return result;
       }
-      
+
       // Fallback to Gmail SMTP
       const result = await smtpTransporter.sendMail({
         from: `"Farmaci Ashila" <${this.senderEmail}>`,
@@ -233,7 +261,7 @@ class EmailService {
           <div style="border-bottom: 2px solid #f0f0f0; padding-bottom: 20px; margin-bottom: 30px;">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap;">
                <div>
-                  <h2 style="color: #A67856; margin: 0 0 5px; font-size: 18px;">INVOICE #${order.orderId}</h2>
+                  <h2 style="color: #A67856; margin: 0 0 5px; font-size: 18px;">INVOICE #${order.orderNumber || order._id}</h2>
                   <p style="margin: 0; color: #666; font-size: 12px;">Date: ${new Date().toLocaleDateString()}</p>
                   <p style="margin: 0; color: #666; font-size: 12px;">Status: <span style="font-weight: bold; color: ${order.paymentStatus === 'paid' ? '#2ecc71' : '#e74c3c'}">${order.paymentStatus?.toUpperCase() || 'CONFIRMED'}</span></p>
                </div>

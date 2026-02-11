@@ -14,6 +14,27 @@ const generateOrderNumber = () => {
   return `ORD-${timestamp}-${random}-${processId}`;
 };
 
+// Download Invoice PDF (moved to top for priority)
+router.get('/:id/download-pdf', async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    const { generateInvoicePDF } = require('../services/pdfService');
+    const pdfBuffer = await generateInvoicePDF(order);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Invoice-${order.orderNumber || order._id}.pdf"`);
+    res.setHeader('Cache-Control', 'no-cache');
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('PDF Download Error:', err);
+    res.status(500).json({ message: 'Error generating PDF invoice' });
+  }
+});
+
 // --- ANALYTICS ENDPOINTS (Must be before dynamic routes) ---
 
 // Admin Dashboard Stats (Revenue, Users, Orders)
@@ -190,7 +211,7 @@ const handleOrderPost = async (req, res) => {
 
     // Wait for all stock checks to complete
     const stockResults = await Promise.all(stockChecks);
-    
+
     // Check for insufficient stock
     const insufficientStockItems = stockResults.filter(result => {
       const availableStock = result.availableStock;
@@ -212,7 +233,7 @@ const handleOrderPost = async (req, res) => {
 
     // Create order
     const orderNumber = generateOrderNumber();
-    
+
     // Calculate totals
     let totalPrice = 0;
     let discountAmount = 0;
@@ -368,9 +389,20 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
 
     res.json(updatedOrder);
   } catch (err) {
-    res.status(err.status || 400).json({ message: err.message });
+    console.error('[Order Update Error] Full error details:', {
+      message: err.message,
+      status: err.status,
+      stack: err.stack,
+      orderId: req.params.id,
+      requestBody: req.body
+    });
+    res.status(err.status || 400).json({
+      message: err.message,
+      error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
+
 
 
 module.exports = router;

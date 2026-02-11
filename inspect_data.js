@@ -14,8 +14,7 @@ async function checkData() {
             'Higjene',
             'Nena dhe femije',
             'Suplemente dhe vitamina',
-            'Monitoruesit e shendetit',
-            'Set'
+            'Monitoruesit e shendetit'
         ];
 
         for (const cat of categories) {
