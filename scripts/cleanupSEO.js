@@ -1,4 +1,4 @@
-require('dotenv').config();
+srequire('dotenv').config();
 const mongoose = require('mongoose');
 const SlugService = require('../services/SlugService');
 const openGraphService = require('../services/OpenGraphService');

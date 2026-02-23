@@ -11,6 +11,7 @@ const productSchema = new mongoose.Schema({
     sparse: true // Allow multiple null values initially
   },
   skinProblem: String, // e.g. "papules", "cyst"
+  color: String,       // e.g. "Red", "Blue"
   genericName: String,
   company: String,
   category: {
@@ -34,7 +35,7 @@ const productSchema = new mongoose.Schema({
   },
   image: {
     type: String,
-    set: function(val) {
+    set: function (val) {
       // Convert to string and handle null/undefined/object cases
       if (val === null || val === undefined || typeof val === 'object') {
         return '';
@@ -44,7 +45,7 @@ const productSchema = new mongoose.Schema({
   },
   imageUrl: {
     type: String,
-    set: function(val) {
+    set: function (val) {
       // Convert to string and handle null/undefined/object cases
       if (val === null || val === undefined || typeof val === 'object') {
         return '';
@@ -98,12 +99,14 @@ const productSchema = new mongoose.Schema({
   },
   variants: [{
     size: String,
+    color: String,
     price: Number,
     stock: Number,
     discount: {
       type: Number,
       default: 0
-    }
+    },
+    image: String
   }],
   variantGroupId: {
     type: String,
@@ -135,17 +138,17 @@ productSchema.index({ subcategory: 1, isActive: 1 });
 productSchema.index({ productType: 1, isActive: 1 });
 
 // Pre-save middleware to generate slug
-productSchema.pre('save', function(next) {
-  if (this.isModified('itemName') || this.isModified('company') || this.isModified('size')) {
+productSchema.pre('save', function (next) {
+  if (this.isModified('itemName') || this.isModified('company') || this.isModified('size') || this.isModified('color')) {
     this.slug = this.generateSlug();
   }
   next();
 });
 
 // Instance method to generate slug
-productSchema.methods.generateSlug = function() {
+productSchema.methods.generateSlug = function () {
   if (!this.itemName) return '';
-  
+
   let slug = this.itemName
     .toString()
     .toLowerCase()
@@ -158,9 +161,13 @@ productSchema.methods.generateSlug = function() {
   if (this.company && this.company !== this.itemName) {
     slug += `-${this.company.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
   }
-  
+
   if (this.size) {
     slug += `-${this.size.toLowerCase().replace(/\s+/g, '-')}`;
+  }
+
+  if (this.color) {
+    slug += `-${this.color.toLowerCase().replace(/\s+/g, '-')}`;
   }
 
   return slug;
