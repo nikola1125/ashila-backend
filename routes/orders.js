@@ -266,28 +266,53 @@ const handleOrderPost = async (req, res) => {
     const savedOrder = await order.save();
 
     // Fire OneSignal push notification (non-blocking, works even when app is closed)
-    try {
-      const appId = process.env.ONESIGNAL_APP_ID;
-      const apiKey = process.env.ONESIGNAL_REST_API_KEY;
-      if (appId && apiKey) {
-        fetch('https://onesignal.com/api/v1/notifications', {
+    setImmediate(async () => {
+      try {
+        const appId = process.env.ONESIGNAL_APP_ID;
+        const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+        if (!appId || !apiKey) {
+          console.log('[OneSignal] Skipping push (AppID/APIKey missing in .env)');
+          return;
+        }
+
+        const data = JSON.stringify({
+          app_id: appId,
+          included_segments: ['All'],
+          headings: { en: '🛒 New Order — Farmaci Ashila' },
+          contents: { en: `${buyerName || 'A customer'} placed order #${orderNumber}` },
+          url: 'https://www.farmaciashila.com/admin/orders',
+          ios_sound: 'default',
+          android_sound: 'default'
+        });
+
+        const https = require('https');
+        const req = https.request({
+          hostname: 'onesignal.com',
+          path: '/api/v1/notifications',
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/json; charset=utf-8',
             'Authorization': `Basic ${apiKey}`
-          },
-          body: JSON.stringify({
-            app_id: appId,
-            included_segments: ['All'],
-            headings: { en: '🛒 New Order — Farmaci Ashila' },
-            contents: { en: `${buyerName || 'A customer'} placed order #${orderNumber}` },
-            url: 'https://www.farmaciashila.com/admin/orders',
-            ios_sound: 'default',
-            android_sound: 'default'
-          })
-        }).catch(e => console.error('[OneSignal] Push failed:', e.message));
+          }
+        }, (res) => {
+          let body = '';
+          res.on('data', d => body += d);
+          res.on('end', () => {
+            if (res.statusCode >= 400) {
+              console.error(`[OneSignal] Push failed (Status ${res.statusCode}):`, body);
+            } else {
+              console.log('[OneSignal] Push sent successfully:', body);
+            }
+          });
+        });
+
+        req.on('error', (e) => console.error('[OneSignal] Request error:', e.message));
+        req.write(data);
+        req.end();
+      } catch (err) {
+        console.error('[OneSignal] Exception:', err.message);
       }
-    } catch (_) { }
+    });
 
     res.status(201).json(savedOrder);
   } catch (err) {
