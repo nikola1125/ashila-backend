@@ -10,6 +10,12 @@ const app = express();
 // Use compression middleware for smaller payloads
 app.use(compression());
 
+// GLOBAL LOGGER: See every request that hits the server
+app.use((req, res, next) => {
+  console.log(`[SERVER] ${req.method} ${req.url} (Origin: ${req.headers.origin || 'none'})`);
+  next();
+});
+
 // Middleware
 // Improved CORS for production:
 // - Support multiple origins (desktop and potentially varying mobile URLs)
@@ -62,7 +68,62 @@ app.use('/push', require('./routes/push'));
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'Server is running', timestamp: new Date() });
+  res.json({ status: 'Server is running', timestamp: new Date(), version: 'Feb-24-v2' });
+});
+
+// STANDALONE Diagnostic endpoint (Bypasses all routers)
+app.get('/onesignal-diagnostic', async (req, res) => {
+  console.log('[DEBUG] Standalone onesignal-diagnostic route hit!');
+  try {
+    const appId = process.env.ONESIGNAL_APP_ID;
+    const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+
+    if (!appId || !apiKey) {
+      return res.status(500).json({
+        ok: false,
+        version: 'Feb-24-v2',
+        message: 'OneSignal credentials missing in .env',
+        appId: appId ? 'Present' : 'Missing',
+        apiKey: apiKey ? 'Present' : 'Missing'
+      });
+    }
+
+    const data = JSON.stringify({
+      app_id: appId,
+      included_segments: ['All'],
+      headings: { en: '🚀 Standalone Test — Farmaci Ashila' },
+      contents: { en: 'If you see this, the Standalone route worked!' }
+    });
+
+    const https = require('https');
+    const osReq = https.request({
+      hostname: 'onesignal.com',
+      path: '/api/v1/notifications',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Authorization': `Basic ${apiKey}`
+      }
+    }, (osRes) => {
+      let body = '';
+      osRes.on('data', d => body += d);
+      osRes.on('end', () => {
+        let parsed = {};
+        try { parsed = JSON.parse(body || '{}'); } catch (e) { parsed = { raw: body }; }
+        res.json({
+          version: 'Feb-24-v2',
+          statusCode: osRes.statusCode,
+          response: parsed
+        });
+      });
+    });
+
+    osReq.on('error', (e) => res.status(500).json({ ok: false, error: e.message }));
+    osReq.write(data);
+    osReq.end();
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 // 404 handler
