@@ -56,7 +56,8 @@ app.use('/reviews', require('./routes/reviews'));
 app.use('/admin', require('./routes/adminAuth'));
 app.use('/settings', require('./routes/settings'));
 app.use('/seo', require('./routes/seo'));
-app.use('/sitemap.xml', require('./routes/seo')); // Allow direct access to /sitemap.xml at root too
+app.use('/sitemap.xml', require('./routes/seo'));
+app.use('/push', require('./routes/push'));
 
 
 // Health check

@@ -264,6 +264,19 @@ const handleOrderPost = async (req, res) => {
     // Stock update removed from here. will be handled on confirmation.
 
     const savedOrder = await order.save();
+
+    // Fire push notification to all subscribed admin devices (non-blocking)
+    try {
+      const { sendPushToAdmins } = require('./push');
+      sendPushToAdmins({
+        title: '🛒 New Order — Farmaci Ashila',
+        body: `${buyerName || 'A customer'} placed an order #${orderNumber}`,
+        url: '/admin/orders',
+        orderNumber,
+        count: 1
+      });
+    } catch (_) { }
+
     res.status(201).json(savedOrder);
   } catch (err) {
     console.error('Order Creation Error:', err.message);
