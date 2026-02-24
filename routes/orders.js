@@ -14,6 +14,72 @@ const generateOrderNumber = () => {
   return `${prefix}-${timestamp}${random}`;
 };
 
+// DEBUG MIDDLEWARE: Log every request to this router
+router.use((req, res, next) => {
+  console.log(`[Orders Router] ${req.method} ${req.path}`);
+  next();
+});
+
+// Diagnostic endpoint to verify OneSignal integration (Must be at the top)
+router.get('/debug-push-test', async (req, res) => {
+  console.log('[DEBUG] debug-push-test route hit!');
+  try {
+    const appId = process.env.ONESIGNAL_APP_ID;
+    const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+
+    if (!appId || !apiKey) {
+      return res.status(500).json({
+        ok: false,
+        message: 'OneSignal credentials missing in .env',
+        appId: appId ? 'Present' : 'Missing',
+        apiKey: apiKey ? 'Present' : 'Missing'
+      });
+    }
+
+    const data = JSON.stringify({
+      app_id: appId,
+      included_segments: ['All'],
+      headings: { en: '🔔 Unique Debug Test — Farmaci Ashila' },
+      contents: { en: 'If you see this, the routing issue is fixed!' },
+      url: 'https://www.farmaciashila.com/admin/orders'
+    });
+
+    const https = require('https');
+    const options = {
+      hostname: 'onesignal.com',
+      path: '/api/v1/notifications',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Authorization': `Basic ${apiKey}`
+      }
+    };
+
+    let resultBody = '';
+    const osReq = https.request(options, (osRes) => {
+      osRes.on('data', d => resultBody += d);
+      osRes.on('end', () => {
+        let parsed = {};
+        try { parsed = JSON.parse(resultBody || '{}'); } catch (e) { parsed = { raw: resultBody }; }
+        res.json({
+          statusCode: osRes.statusCode,
+          response: parsed,
+          config: { appId }
+        });
+      });
+    });
+
+    osReq.on('error', (e) => {
+      res.status(500).json({ ok: false, error: e.message });
+    });
+
+    osReq.write(data);
+    osReq.end();
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // Diagnostic endpoint to verify OneSignal integration (Must be at the top)
 router.get('/test-onesignal', async (req, res) => {
   try {
