@@ -1,9 +1,12 @@
 const mongoose = require('mongoose');
 
-// Stores FCM tokens for admin devices — one token per device
+// Stores Web Push subscriptions (endpoint + encryption keys) per admin device
 const pushSubscriptionSchema = new mongoose.Schema({
-    // FCM device token (replaces the old web-push endpoint/keys)
-    fcmToken: { type: String, required: true, unique: true },
+    endpoint: { type: String, required: true, unique: true },
+    keys: {
+        p256dh: { type: String, required: true },
+        auth: { type: String, required: true }
+    },
     userAgent: { type: String },
     createdAt: { type: Date, default: Date.now }
 });

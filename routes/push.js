@@ -1,66 +1,88 @@
 const express = require('express');
 const router = express.Router();
+const webpush = require('web-push');
 const PushSubscription = require('../models/PushSubscription');
 
-// Use Firebase Admin SDK for sending (already configured in the project)
-const getFirebaseAdmin = () => require('../services/firebaseAdmin');
-
-// GET /push/status — diagnostic endpoint
-router.get('/status', async (req, res) => {
+// Configure VAPID lazily — won't crash if keys are missing
+let vapidReady = false;
+const initVapid = () => {
+    if (vapidReady) return true;
+    const pub = process.env.VAPID_PUBLIC_KEY;
+    const priv = process.env.VAPID_PRIVATE_KEY;
+    const email = process.env.VAPID_EMAIL || 'admin@farmaciashila.com';
+    if (!pub || !priv) return false;
     try {
-        const admin = getFirebaseAdmin();
-        const count = await PushSubscription.countDocuments();
-        res.json({
-            firebaseConfigured: !!admin,
-            subscriptions: count,
-            message: admin
-                ? `FCM push is ready. ${count} device(s) subscribed.`
-                : 'Firebase Admin not configured — check FIREBASE_* env vars on Render.'
-        });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
+        webpush.setVapidDetails(`mailto:${email}`, pub, priv);
+        vapidReady = true;
+        return true;
+    } catch (e) {
+        console.error('[Push] VAPID init error:', e.message);
+        return false;
     }
+};
+initVapid();
+
+// GET /push/vapid-public-key — frontend fetches this to subscribe
+router.get('/vapid-public-key', (req, res) => {
+    const key = process.env.VAPID_PUBLIC_KEY;
+    if (!key) return res.status(503).json({ message: 'Push not configured' });
+    res.json({ publicKey: key });
 });
 
-// POST /push/subscribe — admin device registers its FCM token
+// GET /push/status — diagnostic
+router.get('/status', async (req, res) => {
+    const ready = initVapid();
+    const count = await PushSubscription.countDocuments().catch(() => 0);
+    res.json({
+        pushConfigured: ready,
+        subscriptions: count,
+        message: ready
+            ? `Push ready. ${count} device(s) subscribed.`
+            : 'VAPID keys missing on Render. Add VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_EMAIL.'
+    });
+});
+
+// POST /push/subscribe — admin device saves subscription
 router.post('/subscribe', async (req, res) => {
     try {
-        const { fcmToken, userAgent } = req.body;
-        if (!fcmToken) {
-            return res.status(400).json({ message: 'fcmToken is required' });
+        const { endpoint, keys, userAgent } = req.body;
+        if (!endpoint || !keys?.p256dh || !keys?.auth) {
+            return res.status(400).json({ message: 'Invalid subscription object' });
         }
-
         await PushSubscription.findOneAndUpdate(
-            { fcmToken },
-            { fcmToken, userAgent: userAgent || '' },
+            { endpoint },
+            { endpoint, keys, userAgent: userAgent || '' },
             { upsert: true, new: true }
         );
-
         const count = await PushSubscription.countDocuments();
-        console.log(`[Push] FCM token registered. Total devices: ${count}`);
-        res.status(201).json({ message: 'FCM token saved' });
+        console.log(`[Push] Device subscribed. Total: ${count}`);
+        res.status(201).json({ message: 'Subscribed' });
     } catch (err) {
-        console.error('Push subscribe error:', err);
+        console.error('[Push] Subscribe error:', err.message);
         res.status(500).json({ message: err.message });
     }
 });
 
-// POST /push/unsubscribe — remove FCM token
+// POST /push/unsubscribe
 router.post('/unsubscribe', async (req, res) => {
     try {
-        const { fcmToken } = req.body;
-        await PushSubscription.deleteOne({ fcmToken });
-        res.json({ message: 'Token removed' });
+        await PushSubscription.deleteOne({ endpoint: req.body.endpoint });
+        res.json({ message: 'Unsubscribed' });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
 
-// POST /push/test — send a test notification to all subscribed devices
+// POST /push/test — send test push to all devices
 router.post('/test', async (req, res) => {
+    if (!initVapid()) {
+        return res.status(503).json({
+            message: 'VAPID keys not set. Add VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_EMAIL to Render environment.'
+        });
+    }
     const result = await sendPushToAdmins({
         title: '🔔 Test — Farmaci Ashila',
-        body: 'Push notifications are working!',
+        body: 'Push is working!',
         url: '/admin/orders'
     });
     res.json(result || { message: 'Test sent' });
@@ -68,58 +90,33 @@ router.post('/test', async (req, res) => {
 
 module.exports = router;
 
-// ─── Helper used by orders.js ─────────────────────────────────────────────────
+// Helper used by orders.js
 const sendPushToAdmins = async (payload) => {
-    const admin = getFirebaseAdmin();
-    if (!admin) {
-        console.warn('[Push] Firebase Admin not configured — skipping push');
-        return;
-    }
-
+    if (!initVapid()) return;
     try {
         const subs = await PushSubscription.find();
-        if (!subs.length) {
-            console.log('[Push] No subscribed devices');
-            return;
-        }
+        if (!subs.length) return;
 
-        const tokens = subs.map(s => s.fcmToken);
-        const message = {
-            notification: {
-                title: payload.title,
-                body: payload.body
-            },
-            data: {
-                url: payload.url || '/admin/orders',
-                title: payload.title,
-                body: payload.body
-            },
-            tokens  // Use sendEachForMulticast for multiple devices
-        };
+        const msg = JSON.stringify(payload);
+        const stale = [];
 
-        const response = await admin.messaging().sendEachForMulticast(message);
-        console.log(`[Push] Sent: ${response.successCount}/${tokens.length}`);
-
-        // Clean up invalid/expired tokens
-        const staleTokens = [];
-        response.responses.forEach((r, idx) => {
-            if (!r.success) {
-                const code = r.error?.code;
-                if (code === 'messaging/invalid-registration-token' ||
-                    code === 'messaging/registration-token-not-registered') {
-                    staleTokens.push(tokens[idx]);
+        await Promise.allSettled(subs.map(async (sub) => {
+            try {
+                await webpush.sendNotification(sub, msg);
+            } catch (err) {
+                if (err.statusCode === 410 || err.statusCode === 404) {
+                    stale.push(sub.endpoint);
                 } else {
-                    console.error('[Push] Send error:', r.error?.message);
+                    console.error('[Push]', err.statusCode, err.message);
                 }
             }
-        });
+        }));
 
-        if (staleTokens.length) {
-            await PushSubscription.deleteMany({ fcmToken: { $in: staleTokens } });
-            console.log(`[Push] Cleaned up ${staleTokens.length} invalid token(s)`);
+        if (stale.length) {
+            await PushSubscription.deleteMany({ endpoint: { $in: stale } });
+            console.log(`[Push] Removed ${stale.length} stale subscription(s)`);
         }
-
-        return { sent: response.successCount, total: tokens.length };
+        return { sent: subs.length - stale.length, total: subs.length };
     } catch (err) {
         console.error('[Push] sendPushToAdmins error:', err.message);
     }
