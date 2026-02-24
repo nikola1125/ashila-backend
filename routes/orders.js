@@ -455,4 +455,61 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
 
 
 
+// Diagnostic endpoint to verify OneSignal integration
+router.get('/test-onesignal', async (req, res) => {
+  try {
+    const appId = process.env.ONESIGNAL_APP_ID;
+    const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+
+    if (!appId || !apiKey) {
+      return res.status(500).json({
+        ok: false,
+        message: 'OneSignal credentials missing in .env',
+        appId: appId ? 'Present' : 'Missing',
+        apiKey: apiKey ? 'Present' : 'Missing'
+      });
+    }
+
+    const data = JSON.stringify({
+      app_id: appId,
+      included_segments: ['All'],
+      headings: { en: '🔔 Diagnostic Test — Farmaci Ashila' },
+      contents: { en: 'If you see this, your backend-to-OneSignal link is working!' },
+      url: 'https://www.farmaciashila.com/admin/orders'
+    });
+
+    const https = require('https');
+    const options = {
+      hostname: 'onesignal.com',
+      path: '/api/v1/notifications',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Authorization': `Basic ${apiKey}`
+      }
+    };
+
+    let resultBody = '';
+    const osReq = https.request(options, (osRes) => {
+      osRes.on('data', d => resultBody += d);
+      osRes.on('end', () => {
+        res.json({
+          statusCode: osRes.statusCode,
+          response: JSON.parse(resultBody || '{}'),
+          config: { appId }
+        });
+      });
+    });
+
+    osReq.on('error', (e) => {
+      res.status(500).json({ ok: false, error: e.message });
+    });
+
+    osReq.write(data);
+    osReq.end();
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 module.exports = router;
