@@ -265,16 +265,28 @@ const handleOrderPost = async (req, res) => {
 
     const savedOrder = await order.save();
 
-    // Fire push notification to all subscribed admin devices (non-blocking)
+    // Fire OneSignal push notification (non-blocking, works even when app is closed)
     try {
-      const { sendPushToAdmins } = require('./push');
-      sendPushToAdmins({
-        title: '🛒 New Order — Farmaci Ashila',
-        body: `${buyerName || 'A customer'} placed an order #${orderNumber}`,
-        url: '/admin/orders',
-        orderNumber,
-        count: 1
-      });
+      const appId = process.env.ONESIGNAL_APP_ID;
+      const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+      if (appId && apiKey) {
+        fetch('https://onesignal.com/api/v1/notifications', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${apiKey}`
+          },
+          body: JSON.stringify({
+            app_id: appId,
+            included_segments: ['All'],
+            headings: { en: '🛒 New Order — Farmaci Ashila' },
+            contents: { en: `${buyerName || 'A customer'} placed order #${orderNumber}` },
+            url: 'https://www.farmaciashila.com/admin/orders',
+            ios_sound: 'default',
+            android_sound: 'default'
+          })
+        }).catch(e => console.error('[OneSignal] Push failed:', e.message));
+      }
     } catch (_) { }
 
     res.status(201).json(savedOrder);
