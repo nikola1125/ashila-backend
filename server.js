@@ -78,21 +78,23 @@ app.get('/onesignal-diagnostic', async (req, res) => {
     const appId = process.env.ONESIGNAL_APP_ID;
     const apiKey = process.env.ONESIGNAL_REST_API_KEY;
 
+    const mask = (str) => str ? `${str.substring(0, 4)}...${str.substring(str.length - 4)}` : 'MISSING';
+
     if (!appId || !apiKey) {
       return res.status(500).json({
         ok: false,
-        version: 'Feb-24-v2',
-        message: 'OneSignal credentials missing in .env',
-        appId: appId ? 'Present' : 'Missing',
-        apiKey: apiKey ? 'Present' : 'Missing'
+        version: 'Feb-24-v3',
+        error: 'Credentials missing',
+        appId: mask(appId),
+        apiKey: mask(apiKey)
       });
     }
 
     const data = JSON.stringify({
       app_id: appId,
       included_segments: ['All'],
-      headings: { en: '🚀 Standalone Test — Farmaci Ashila' },
-      contents: { en: 'If you see this, the Standalone route worked!' }
+      headings: { en: '🚀 Diagnostic v3 — Farmaci Ashila' },
+      contents: { en: 'Testing backend notification link...' }
     });
 
     const https = require('https');
@@ -111,9 +113,14 @@ app.get('/onesignal-diagnostic', async (req, res) => {
         let parsed = {};
         try { parsed = JSON.parse(body || '{}'); } catch (e) { parsed = { raw: body }; }
         res.json({
-          version: 'Feb-24-v2',
+          version: 'Feb-24-v3',
           statusCode: osRes.statusCode,
-          response: parsed
+          response: parsed,
+          debug: {
+            appId: mask(appId),
+            apiKeyLength: apiKey.length,
+            apiKeyMasked: mask(apiKey)
+          }
         });
       });
     });
