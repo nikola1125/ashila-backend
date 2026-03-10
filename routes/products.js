@@ -14,7 +14,7 @@ const router = express.Router();
 // Get all products
 router.get('/', async (req, res) => {
   try {
-    const { category, search, seller, limit, group } = req.query;
+    const { category, search, seller, limit, group, light, includeCategory } = req.query;
     let filter = {};
 
     if (category) filter.categoryName = category;
@@ -31,10 +31,46 @@ router.get('/', async (req, res) => {
       ];
     }
 
+    // Lightweight payload for faster list rendering on Shop.
+    // Keeps fields used by listing, filtering and cart actions.
+    const lightProjection = [
+      '_id',
+      'itemName',
+      'genericName',
+      'company',
+      'categoryName',
+      'subcategory',
+      'productType',
+      'option',
+      'options',
+      'price',
+      'discount',
+      'image',
+      'imageUrl',
+      'stock',
+      'size',
+      'seller',
+      'sellerEmail',
+      'bestsellerCategory',
+      'skinProblem',
+      'isActive',
+      'isBestseller',
+      'isFreeDelivery',
+      'variantGroupId',
+      'variants',
+      'createdAt',
+      'updatedAt'
+    ].join(' ');
+
+    const projection = light === 'true' ? lightProjection : '-description';
+
     let query = Product.find(filter)
-      .select('-description') // Exclude heavy description field
-      .populate('category')
+      .select(projection)
       .lean();
+
+    if (includeCategory === 'true') {
+      query = query.populate('category');
+    }
 
     if (limit) {
       query = query.limit(parseInt(limit));
