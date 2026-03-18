@@ -311,17 +311,35 @@ const handleOrderPost = async (req, res) => {
     const stockChecks = items.map(async (item) => {
       try {
         let product;
+        let variantInfo = null;
+
         if (item.productId) {
           product = await Product.findById(item.productId);
+
+          // If not found as top-level product, check if it's a variant
+          if (!product) {
+            const parentProduct = await Product.findOne({ "variants._id": item.productId });
+            if (parentProduct) {
+              const variant = parentProduct.variants.find(v => v._id.toString() === item.productId);
+              if (variant) {
+                variantInfo = variant;
+                product = parentProduct;
+              }
+            }
+          }
         } else {
           // Legacy support for items without productId
           product = await Product.findOne({ itemName: item.itemName });
         }
+
+        const availableStock = variantInfo ? variantInfo.stock : (product ? product.stock : 0);
+        const productName = product ? product.itemName : 'Unknown';
+
         return {
           item,
           product,
-          availableStock: product ? product.stock : 0,
-          productName: product ? product.itemName : 'Unknown'
+          availableStock,
+          productName
         };
       } catch (err) {
         console.error(`Error checking stock for item ${item.itemName}:`, err);
@@ -504,15 +522,31 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
 
           console.log(`[Stock Update] Confirming item: ${item.itemName} | Size: ${item.selectedSize} | Qty: ${qty}`);
 
-          const query = item.selectedSize
-            ? { _id: item.productId, size: item.selectedSize, stock: { $gte: qty } }
-            : { _id: item.productId, stock: { $gte: qty } };
+          // Handle both top-level products and variants
+          let updateResult;
 
-          const updateResult = await Product.findOneAndUpdate(
-            query,
-            { $inc: { stock: -qty } },
+          // First try to update as a variant
+          updateResult = await Product.findOneAndUpdate(
+            { "variants._id": item.productId, "variants.stock": { $gte: qty } },
+            {
+              $inc: { "variants.$.stock": -qty, stock: -qty },
+              updatedAt: Date.now()
+            },
             { new: true, session }
           );
+
+          // If not found as a variant, try as a top-level product
+          if (!updateResult) {
+            const query = item.selectedSize
+              ? { _id: item.productId, size: item.selectedSize, stock: { $gte: qty } }
+              : { _id: item.productId, stock: { $gte: qty } };
+
+            updateResult = await Product.findOneAndUpdate(
+              query,
+              { $inc: { stock: -qty }, updatedAt: Date.now() },
+              { new: true, session }
+            );
+          }
 
           if (!updateResult) {
             const e = new Error(`Insufficient stock or product not found for: ${item.itemName || item.productId}`);
