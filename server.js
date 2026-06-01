@@ -150,7 +150,7 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 const BASE_URL = process.env.NODE_ENV === 'production'
-  ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'your-app.onrender.com'}`
+  ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN || process.env.BASE_URL || 'your-app.railway.app'}`
   : `http://localhost:${PORT}`;
 
 app.listen(PORT, HOST, () => {

@@ -107,7 +107,7 @@ class EmailService {
       // Base URL for download link (detect environment)
       const port = process.env.PORT || 5001;
       const isDev = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
-      const baseUrl = process.env.BACKEND_URL || (isDev ? `http://localhost:${port}` : 'https://ashila-backend.onrender.com');
+      const baseUrl = process.env.BACKEND_URL || (isDev ? `http://localhost:${port}` : 'https://ashila-backend-production.up.railway.app');
       const downloadLink = `${baseUrl}/orders/${orderDetails._id}/download-pdf`;
       console.log(`[DEBUG] Generated PDF download link: ${downloadLink}`);
 
