@@ -52,7 +52,6 @@ const optionToSlugMap = {
     "Ushqyerja me gji": "ushqyerja-me-gji",
     "Ushqim per femije": "ushqim-per-femije",
     "Pelena": "pelena",
-    "Aksesore": "aksesore-floke",
 
     // Suplemente
     "Vitamina": "vitamina",

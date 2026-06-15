@@ -604,6 +604,12 @@ router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), upload.any()
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
+    // Sellers may only modify their own products; admins may modify any
+    const isAdmin = req.user?.admin === true || req.user?.typ === 'admin';
+    if (!isAdmin && product.sellerEmail && product.sellerEmail !== req.user?.email) {
+      return res.status(403).json({ message: 'Forbidden: not your product' });
+    }
+
     const { uploadToCloudflare } = require('../utils/cloudflare');
     const uploadFile = async (file) => {
       return await uploadToCloudflare(file.buffer, file.originalname, {
@@ -745,7 +751,18 @@ router.patch('/:id', requireAuth, requireRole(['seller', 'admin']), upload.any()
       );
     }
 
-    Object.assign(product, req.body);
+    // Whitelist updatable fields (prevents mass assignment of seller, rating, _id, etc.)
+    const PRODUCT_EDITABLE_FIELDS = [
+      'itemName', 'genericName', 'company', 'category', 'categoryName',
+      'subcategory', 'productType', 'option', 'options', 'size', 'color',
+      'price', 'discount', 'image', 'imageUrl', 'imageId', 'description',
+      'stock', 'dosage', 'manufacturer', 'expireDate', 'isActive',
+      'isBestseller', 'isFreeDelivery', 'bestsellerCategory', 'skinProblem',
+      'variants', 'variantGroupId'
+    ];
+    for (const f of PRODUCT_EDITABLE_FIELDS) {
+      if (req.body[f] !== undefined) product[f] = req.body[f];
+    }
     product.updatedAt = Date.now();
 
     // Handle slug changes for SEO
@@ -823,6 +840,12 @@ router.delete('/:id', requireAuth, requireRole(['seller', 'admin']), async (req,
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    // Sellers may only delete their own products; admins may delete any
+    const isAdmin = req.user?.admin === true || req.user?.typ === 'admin';
+    if (!isAdmin && product.sellerEmail && product.sellerEmail !== req.user?.email) {
+      return res.status(403).json({ message: 'Forbidden: not your product' });
+    }
 
     // Delete image from Cloudflare R2 if it exists
     if (product.imageUrl || product.image) {

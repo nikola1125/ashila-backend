@@ -1,150 +1,61 @@
-
 const express = require('express');
 const router = express.Router();
 const Order = require('../models/Order');
 const User = require('../models/User');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const Product = require('../models/Product');
+const Settings = require('../models/Settings');
+const { requireAuth, requireAdmin, requireSelfOrAdmin } = require('../middleware/auth');
 const mongoose = require('mongoose');
 
-// Generate order number with better collision prevention
+// Generate a unique order number (retries on collision)
 const generateOrderNumber = () => {
   const prefix = 'ASH';
-  const timestamp = Date.now().toString().slice(-4);
-  const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+  const timestamp = Date.now().toString().slice(-6);
+  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
   return `${prefix}-${timestamp}${random}`;
 };
 
-// DEBUG MIDDLEWARE: Log every request to this router
-router.use((req, res, next) => {
-  console.log(`[Orders Router] ${req.method} ${req.path}`);
-  next();
-});
+// Fields the admin is allowed to change on an order
+const ORDER_EDITABLE_FIELDS = ['status', 'paymentStatus', 'trackingNumber', 'notes', 'deliveryAddress'];
 
-// Diagnostic endpoint to verify OneSignal integration (Must be at the top)
-router.get('/debug-push-test', async (req, res) => {
-  console.log('[DEBUG] debug-push-test route hit!');
-  try {
-    const appId = process.env.ONESIGNAL_APP_ID;
-    const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+// Resolve the real product/variant for an order item (source of truth for price)
+const resolveItem = async (item) => {
+  let product = null;
+  let variant = null;
 
-    if (!appId || !apiKey) {
-      return res.status(500).json({
-        ok: false,
-        message: 'OneSignal credentials missing in .env',
-        appId: appId ? 'Present' : 'Missing',
-        apiKey: apiKey ? 'Present' : 'Missing'
-      });
-    }
-
-    const data = JSON.stringify({
-      app_id: appId,
-      included_segments: ['All'],
-      headings: { en: '🔔 Unique Debug Test — Farmaci Ashila' },
-      contents: { en: 'If you see this, the routing issue is fixed!' },
-      url: 'https://www.farmaciashila.com/admin/orders'
-    });
-
-    const https = require('https');
-    const options = {
-      hostname: 'onesignal.com',
-      path: '/api/v1/notifications',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Authorization': `Basic ${apiKey}`
+  if (item.productId) {
+    product = await Product.findById(item.productId);
+    if (!product) {
+      const parent = await Product.findOne({ 'variants._id': item.productId });
+      if (parent) {
+        variant = parent.variants.find(v => v._id.toString() === String(item.productId)) || null;
+        product = parent;
       }
-    };
-
-    let resultBody = '';
-    const osReq = https.request(options, (osRes) => {
-      osRes.on('data', d => resultBody += d);
-      osRes.on('end', () => {
-        let parsed = {};
-        try { parsed = JSON.parse(resultBody || '{}'); } catch (e) { parsed = { raw: resultBody }; }
-        res.json({
-          statusCode: osRes.statusCode,
-          response: parsed,
-          config: { appId }
-        });
-      });
-    });
-
-    osReq.on('error', (e) => {
-      res.status(500).json({ ok: false, error: e.message });
-    });
-
-    osReq.write(data);
-    osReq.end();
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-// Diagnostic endpoint to verify OneSignal integration (Must be at the top)
-router.get('/test-onesignal', async (req, res) => {
-  try {
-    const appId = process.env.ONESIGNAL_APP_ID;
-    const apiKey = process.env.ONESIGNAL_REST_API_KEY;
-
-    if (!appId || !apiKey) {
-      return res.status(500).json({
-        ok: false,
-        message: 'OneSignal credentials missing in .env',
-        appId: appId ? 'Present' : 'Missing',
-        apiKey: apiKey ? 'Present' : 'Missing'
-      });
     }
-
-    const data = JSON.stringify({
-      app_id: appId,
-      included_segments: ['All'],
-      headings: { en: '🔔 Diagnostic Test — Farmaci Ashila' },
-      contents: { en: 'If you see this, your backend-to-OneSignal link is working!' },
-      url: 'https://www.farmaciashila.com/admin/orders'
-    });
-
-    const https = require('https');
-    const options = {
-      hostname: 'onesignal.com',
-      path: '/api/v1/notifications',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Authorization': `Basic ${apiKey}`
-      }
-    };
-
-    let resultBody = '';
-    const osReq = https.request(options, (osRes) => {
-      osRes.on('data', d => resultBody += d);
-      osRes.on('end', () => {
-        let parsed = {};
-        try { parsed = JSON.parse(resultBody || '{}'); } catch (e) { parsed = { raw: resultBody }; }
-        res.json({
-          statusCode: osRes.statusCode,
-          response: parsed,
-          config: { appId }
-        });
-      });
-    });
-
-    osReq.on('error', (e) => {
-      res.status(500).json({ ok: false, error: e.message });
-    });
-
-    osReq.write(data);
-    osReq.end();
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+  } else if (item.itemName) {
+    product = await Product.findOne({ itemName: item.itemName });
   }
-});
 
-// Download Invoice PDF (moved to top for priority)
-router.get('/:id/download-pdf', async (req, res) => {
+  const availableStock = variant ? variant.stock : (product ? product.stock : 0);
+  const unitPrice = variant ? variant.price : (product ? product.price : null);
+  const discount = variant ? (variant.discount || 0) : (product ? (product.discount || 0) : 0);
+  const productName = product ? product.itemName : (item.itemName || 'Unknown');
+
+  return { product, variant, availableStock, unitPrice, discount, productName };
+};
+
+// Download Invoice PDF (owner or admin only)
+router.get('/:id/download-pdf', requireAuth, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
+    }
+
+    const isAdmin = req.user?.typ === 'admin' || req.user?.admin === true;
+    const isOwner = (req.user?.email || '').toLowerCase() === (order.buyerEmail || '').toLowerCase();
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ message: 'Forbidden' });
     }
 
     const { generateInvoicePDF } = require('../services/pdfService');
@@ -155,30 +66,28 @@ router.get('/:id/download-pdf', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.send(pdfBuffer);
   } catch (err) {
-    console.error('PDF Download Error:', err);
+    console.error('PDF Download Error:', err.message);
     res.status(500).json({ message: 'Error generating PDF invoice' });
   }
 });
 
-// --- ANALYTICS ENDPOINTS (Must be before dynamic routes) ---
+// --- ANALYTICS ENDPOINTS (must be before dynamic routes) ---
 
 // Admin Dashboard Stats (Revenue, Users, Orders)
 router.get('/stats/admin-dashboard', requireAuth, requireAdmin, async (req, res) => {
   try {
     const totalRevenue = await Order.aggregate([
-      { $group: { _id: null, total: { $sum: "$finalPrice" } } }
+      { $group: { _id: null, total: { $sum: '$finalPrice' } } }
     ]);
 
     const totalOrders = await Order.countDocuments();
     const pendingOrders = await Order.countDocuments({ status: 'Pending' });
 
-    // Use estimatedDocumentCount for large collections or countDocuments for accuracy
-    // Assuming User model exists, otherwise return 0
     let totalUsers = 0;
     try {
       totalUsers = await User.countDocuments({ role: 'user' });
     } catch (e) {
-      console.warn("User model not found or error counting users", e);
+      console.warn('Error counting users:', e.message);
     }
 
     res.json([{
@@ -198,8 +107,8 @@ router.get('/admin/sales-report', requireAuth, requireAdmin, async (req, res) =>
     const sales = await Order.aggregate([
       {
         $group: {
-          _id: "$status",
-          totalRevenue: { $sum: "$finalPrice" },
+          _id: '$status',
+          totalRevenue: { $sum: '$finalPrice' },
           count: { $sum: 1 }
         }
       }
@@ -217,12 +126,10 @@ router.get('/admin/revenue-series', requireAuth, requireAdmin, async (req, res) 
     let groupBy = {};
     let dateFilter = {};
 
-    // Explicit Date Range Handling
     if (startDate || endDate) {
       dateFilter.createdAt = {};
       if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
       if (endDate) {
-        // Create end date object set to end of that day
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
         dateFilter.createdAt.$lte = end;
@@ -232,36 +139,24 @@ router.get('/admin/revenue-series', requireAuth, requireAdmin, async (req, res) 
     const now = new Date();
 
     if (range === 'day') {
-      // Default: Last 7 days if no dates provided
       if (!startDate && !endDate) dateFilter = { createdAt: { $gte: new Date(now.setDate(now.getDate() - 30)) } };
-      groupBy = {
-        $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
-      };
+      groupBy = { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } };
     } else if (range === 'week') {
-      // Default: Last 12 weeks
       if (!startDate && !endDate) dateFilter = { createdAt: { $gte: new Date(now.setDate(now.getDate() - 84)) } };
-      groupBy = {
-        $dateToString: { format: "%Y-%U", date: "$createdAt" }
-      };
+      groupBy = { $dateToString: { format: '%Y-%U', date: '$createdAt' } };
     } else if (range === 'month') {
-      // Default: Last 12 months
       if (!startDate && !endDate) dateFilter = { createdAt: { $gte: new Date(now.setMonth(now.getMonth() - 12)) } };
-      groupBy = {
-        $dateToString: { format: "%Y-%m", date: "$createdAt" }
-      };
+      groupBy = { $dateToString: { format: '%Y-%m', date: '$createdAt' } };
     } else if (range === 'year') {
-      // All time by year default
-      groupBy = {
-        $dateToString: { format: "%Y", date: "$createdAt" }
-      };
+      groupBy = { $dateToString: { format: '%Y', date: '$createdAt' } };
     }
 
     const series = await Order.aggregate([
-      { $match: { ...dateFilter, status: { $ne: 'Cancelled' } } }, // Exclude cancelled?
+      { $match: { ...dateFilter, status: { $ne: 'Cancelled' } } },
       {
         $group: {
           _id: groupBy,
-          totalRevenue: { $sum: "$finalPrice" },
+          totalRevenue: { $sum: '$finalPrice' },
           totalOrders: { $sum: 1 }
         }
       },
@@ -284,179 +179,161 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-// Get orders by email (Client)
-router.get('/:email', async (req, res) => {
+// Get orders by email (owner or admin only)
+router.get('/:email', requireAuth, requireSelfOrAdmin((req) => req.params.email), async (req, res) => {
   try {
-    const email = req.params.email;
-    const orders = await Order.find({ buyerEmail: email }).populate('items.productId').sort({ createdAt: -1 });
+    const orders = await Order.find({ buyerEmail: req.params.email })
+      .populate('items.productId')
+      .sort({ createdAt: -1 });
     res.json(orders);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
+// Fire OneSignal push notification (non-blocking)
+const notifyNewOrder = (orderNumber, buyerName) => {
+  setImmediate(() => {
+    try {
+      const appId = process.env.ONESIGNAL_APP_ID;
+      const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+      if (!appId || !apiKey) return;
+
+      const data = JSON.stringify({
+        app_id: appId,
+        included_segments: ['All'],
+        headings: { en: '🛒 New Order — Farmaci Ashila' },
+        contents: { en: `${buyerName || 'A customer'} placed order #${orderNumber}` },
+        url: 'https://www.farmaciashila.com/admin/orders',
+        ios_sound: 'default',
+        android_sound: 'default'
+      });
+
+      const https = require('https');
+      const osReq = https.request({
+        hostname: 'onesignal.com',
+        path: '/api/v1/notifications',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Authorization': `Basic ${apiKey}`
+        }
+      }, (osRes) => {
+        let body = '';
+        osRes.on('data', d => body += d);
+        osRes.on('end', () => {
+          if (osRes.statusCode >= 400) console.error(`[OneSignal] Push failed (${osRes.statusCode})`);
+        });
+      });
+      osReq.on('error', (e) => console.error('[OneSignal] Request error:', e.message));
+      osReq.write(data);
+      osReq.end();
+    } catch (err) {
+      console.error('[OneSignal] Exception:', err.message);
+    }
+  });
+};
+
 // Shared POST handler for orders
 const handleOrderPost = async (req, res) => {
   try {
-    const { items, buyerEmail, buyerName, deliveryAddress, status } = req.body;
+    const { items, deliveryAddress } = req.body;
 
-    // Get shipping cost based on free delivery setting
-    const Settings = require('../models/Settings');
-    const settings = await Settings.findOne();
-    const freeDelivery = settings?.freeDelivery || false;
-    const SHIPPING_COST = freeDelivery ? 0 : 300; // 0 if free delivery, 300 otherwise
-
-    // Validate stock for each item - parallel processing for better performance
-    const Product = require('../models/Product');
-    const stockChecks = items.map(async (item) => {
-      try {
-        let product;
-        let variantInfo = null;
-
-        if (item.productId) {
-          product = await Product.findById(item.productId);
-
-          // If not found as top-level product, check if it's a variant
-          if (!product) {
-            const parentProduct = await Product.findOne({ "variants._id": item.productId });
-            if (parentProduct) {
-              const variant = parentProduct.variants.find(v => v._id.toString() === item.productId);
-              if (variant) {
-                variantInfo = variant;
-                product = parentProduct;
-              }
-            }
-          }
-        } else {
-          // Legacy support for items without productId
-          product = await Product.findOne({ itemName: item.itemName });
-        }
-
-        const availableStock = variantInfo ? variantInfo.stock : (product ? product.stock : 0);
-        const productName = product ? product.itemName : 'Unknown';
-
-        return {
-          item,
-          product,
-          availableStock,
-          productName
-        };
-      } catch (err) {
-        console.error(`Error checking stock for item ${item.itemName}:`, err);
-        return {
-          item,
-          product: null,
-          availableStock: 0,
-          productName: item.itemName
-        };
-      }
-    });
-
-    // Wait for all stock checks to complete
-    const stockResults = await Promise.all(stockChecks);
-
-    // Check for insufficient stock
-    const insufficientStockItems = stockResults.filter(result => {
-      const availableStock = result.availableStock;
-      const requestedQuantity = result.item.quantity;
-      return availableStock < requestedQuantity;
-    });
-
-    if (insufficientStockItems.length > 0) {
-      return res.status(400).json({
-        message: 'Insufficient stock for some items',
-        insufficientStockItems: insufficientStockItems.map(result => ({
-          itemName: result.productName,
-          requestedQuantity: result.item.quantity,
-          availableStock: result.availableStock,
-          selectedSize: result.item.selectedSize || 'N/A'
-        }))
-      });
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'Order must contain at least one item' });
     }
 
-    // Create order
-    const orderNumber = generateOrderNumber();
+    const isAdmin = req.user?.typ === 'admin' || req.user?.admin === true;
+    // Derive buyer identity from the authenticated token (admins may place on behalf of a customer)
+    const buyerEmail = isAdmin ? (req.body.buyerEmail || req.user?.email) : req.user?.email;
+    const buyerName = req.body.buyerName || req.user?.name || req.user?.email;
 
-    // Calculate totals
+    if (!buyerEmail) {
+      return res.status(400).json({ message: 'Buyer email is required' });
+    }
+
+    const settings = await Settings.findOne();
+    const freeDelivery = settings?.freeDelivery || false;
+    const SHIPPING_COST = freeDelivery ? 0 : 300;
+
+    // Resolve every item against the DB — prices come from the server, never the client
+    const resolved = await Promise.all(items.map(async (item) => ({
+      item,
+      ...(await resolveItem(item))
+    })));
+
+    // Validate existence and stock
+    const problems = [];
+    for (const r of resolved) {
+      const qty = Number(r.item.quantity) || 0;
+      if (!r.product || r.unitPrice == null) {
+        problems.push({ itemName: r.productName, reason: 'Product not found' });
+      } else if (qty <= 0) {
+        problems.push({ itemName: r.productName, reason: 'Invalid quantity' });
+      } else if (r.availableStock < qty) {
+        problems.push({
+          itemName: r.productName,
+          reason: 'Insufficient stock',
+          requestedQuantity: qty,
+          availableStock: r.availableStock
+        });
+      }
+    }
+
+    if (problems.length > 0) {
+      return res.status(400).json({ message: 'Some items could not be ordered', problems });
+    }
+
+    // Build trusted line items and totals from server-side prices
     let totalPrice = 0;
     let discountAmount = 0;
-    items.forEach(item => {
-      const itemTotal = item.price * item.quantity;
-      const discount = itemTotal * (item.discount / 100);
+    const trustedItems = resolved.map((r) => {
+      const qty = Number(r.item.quantity);
+      const itemTotal = r.unitPrice * qty;
+      const itemDiscount = itemTotal * (r.discount / 100);
       totalPrice += itemTotal;
-      discountAmount += discount;
+      discountAmount += itemDiscount;
+
+      return {
+        productId: r.item.productId,
+        itemName: r.productName,
+        quantity: qty,
+        price: r.unitPrice,
+        discount: r.discount,
+        image: r.variant?.image || r.product.image,
+        seller: r.product.seller,
+        sellerEmail: r.product.sellerEmail,
+        selectedSize: r.item.selectedSize || r.variant?.size
+      };
     });
 
-    // Final price includes shipping (0 if free delivery)
     const finalPrice = totalPrice - discountAmount + SHIPPING_COST;
 
-    const order = new Order({
-      orderNumber,
-      buyerEmail,
-      buyerName,
-      items,
-      totalPrice,
-      discountAmount,
-      finalPrice,
-      shippingCost: SHIPPING_COST,
-      deliveryAddress,
-      paymentStatus: 'unpaid',
-      status: status || 'Pending'
-    });
-
-    // Stock update removed from here. will be handled on confirmation.
-
-    const savedOrder = await order.save();
-
-    // Fire OneSignal push notification (non-blocking, works even when app is closed)
-    setImmediate(async () => {
+    // Create the order, retrying once on the rare order-number collision
+    let savedOrder = null;
+    for (let attempt = 0; attempt < 5 && !savedOrder; attempt++) {
       try {
-        const appId = process.env.ONESIGNAL_APP_ID;
-        const apiKey = process.env.ONESIGNAL_REST_API_KEY;
-        if (!appId || !apiKey) {
-          console.log('[OneSignal] Skipping push (AppID/APIKey missing in .env)');
-          return;
-        }
-
-        const data = JSON.stringify({
-          app_id: appId,
-          included_segments: ['All'],
-          headings: { en: '🛒 New Order — Farmaci Ashila' },
-          contents: { en: `${buyerName || 'A customer'} placed order #${orderNumber}` },
-          url: 'https://www.farmaciashila.com/admin/orders',
-          ios_sound: 'default',
-          android_sound: 'default'
+        const order = new Order({
+          orderNumber: generateOrderNumber(),
+          buyerEmail,
+          buyerName,
+          items: trustedItems,
+          totalPrice,
+          discountAmount,
+          finalPrice,
+          shippingCost: SHIPPING_COST,
+          deliveryAddress,
+          paymentStatus: 'unpaid',
+          status: 'Pending'
         });
-
-        const https = require('https');
-        const req = https.request({
-          hostname: 'onesignal.com',
-          path: '/api/v1/notifications',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json; charset=utf-8',
-            'Authorization': `Basic ${apiKey}`
-          }
-        }, (res) => {
-          let body = '';
-          res.on('data', d => body += d);
-          res.on('end', () => {
-            if (res.statusCode >= 400) {
-              console.error(`[OneSignal] Push failed (Status ${res.statusCode}):`, body);
-            } else {
-              console.log('[OneSignal] Push sent successfully:', body);
-            }
-          });
-        });
-
-        req.on('error', (e) => console.error('[OneSignal] Request error:', e.message));
-        req.write(data);
-        req.end();
+        savedOrder = await order.save();
       } catch (err) {
-        console.error('[OneSignal] Exception:', err.message);
+        if (err.code === 11000 && attempt < 4) continue; // duplicate orderNumber, retry
+        throw err;
       }
-    });
+    }
 
+    notifyNewOrder(savedOrder.orderNumber, buyerName);
     res.status(201).json(savedOrder);
   } catch (err) {
     console.error('Order Creation Error:', err.message);
@@ -464,25 +341,23 @@ const handleOrderPost = async (req, res) => {
   }
 };
 
-// Create order (Client) - primary endpoint
-router.post('/', async (req, res) => {
-  return handleOrderPost(req, res);
-});
+// Create order (Client) — primary endpoint
+router.post('/', requireAuth, handleOrderPost);
 
-// Checkout alias (Client) - backward compatible
-router.post('/checkout', async (req, res) => {
-  return handleOrderPost(req, res);
-});
+// Checkout alias (Client) — backward compatible
+router.post('/checkout', requireAuth, handleOrderPost);
 
 // Update order status (admin)
 router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
-    console.log(`[DEBUG] Order status update request for ID: ${req.params.id}`);
-    console.log(`[DEBUG] Request body:`, req.body);
-
-    const Product = require('../models/Product');
     const orderId = req.params.id;
     const nextStatus = req.body?.status;
+
+    // Whitelist the fields an admin may change
+    const updates = {};
+    for (const f of ORDER_EDITABLE_FIELDS) {
+      if (req.body[f] !== undefined) updates[f] = req.body[f];
+    }
 
     const isTxnUnsupportedError = (err) => {
       const msg = String(err?.message || '');
@@ -503,35 +378,20 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
       }
 
       const oldStatus = order.status;
-      console.log(`[DEBUG] Current order status: "${oldStatus}"`);
-      console.log(`[DEBUG] New status from request: "${nextStatus}"`);
-
-      Object.assign(order, req.body);
+      Object.assign(order, updates);
       order.updatedAt = Date.now();
       const updatedOrder = await order.save({ session });
-      console.log(`[DEBUG] Order saved. New status: "${updatedOrder.status}"`);
 
       // Only decrement stock when moving into Confirmed
-      console.log(`[DEBUG] Checking stock update condition: oldStatus="${oldStatus}" vs nextStatus="${nextStatus}"`);
       if (oldStatus !== 'Confirmed' && nextStatus === 'Confirmed') {
-        console.log(`[DEBUG] STOCK UPDATE CONDITION MET - Triggering stock update`);
-
         for (const item of updatedOrder.items) {
           const qty = Number(item.quantity) || 0;
           if (qty <= 0) continue;
 
-          console.log(`[Stock Update] Confirming item: ${item.itemName} | Size: ${item.selectedSize} | Qty: ${qty}`);
-
-          // Handle both top-level products and variants
-          let updateResult;
-
           // First try to update as a variant
-          updateResult = await Product.findOneAndUpdate(
-            { "variants._id": item.productId, "variants.stock": { $gte: qty } },
-            {
-              $inc: { "variants.$.stock": -qty, stock: -qty },
-              updatedAt: Date.now()
-            },
+          let updateResult = await Product.findOneAndUpdate(
+            { 'variants._id': item.productId, 'variants.stock': { $gte: qty } },
+            { $inc: { 'variants.$.stock': -qty, stock: -qty }, updatedAt: Date.now() },
             { new: true, session }
           );
 
@@ -554,8 +414,6 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
             throw e;
           }
         }
-      } else {
-        console.log(`[DEBUG] Stock update NOT triggered - condition not met`);
       }
 
       return { updatedOrder, oldStatus };
@@ -566,20 +424,14 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
 
     const session = await mongoose.startSession();
     try {
-      const result = await session.withTransaction(async () => {
+      await session.withTransaction(async () => {
         const r = await runUpdate(session);
         updatedOrder = r.updatedOrder;
         oldStatus = r.oldStatus;
-        return true;
       });
-
-      if (!result) {
-        throw new Error('Transaction aborted');
-      }
     } catch (err) {
-      // If transactions aren't supported (non-replica set), fallback to non-transactional behavior
       if (isTxnUnsupportedError(err)) {
-        console.warn('[WARN] MongoDB transactions unavailable. Falling back to non-transactional order confirmation.');
+        console.warn('[WARN] MongoDB transactions unavailable. Falling back to non-transactional confirmation.');
         const r = await runUpdate(undefined);
         updatedOrder = r.updatedOrder;
         oldStatus = r.oldStatus;
@@ -593,26 +445,15 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
     // Send confirmation email after DB changes succeed
     if (oldStatus !== 'Confirmed' && nextStatus === 'Confirmed') {
       const emailService = require('../services/emailService');
-      emailService.sendOrderConfirmation(updatedOrder.buyerEmail, updatedOrder).catch(err => console.error('Email trigger fail:', err));
+      emailService.sendOrderConfirmation(updatedOrder.buyerEmail, updatedOrder)
+        .catch(err => console.error('Email trigger fail:', err.message));
     }
 
     res.json(updatedOrder);
   } catch (err) {
-    console.error('[Order Update Error] Full error details:', {
-      message: err.message,
-      status: err.status,
-      stack: err.stack,
-      orderId: req.params.id,
-      requestBody: req.body
-    });
-    res.status(err.status || 400).json({
-      message: err.message,
-      error: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+    console.error('[Order Update Error]', err.message);
+    res.status(err.status || 400).json({ message: err.message });
   }
 });
-
-
-
 
 module.exports = router;

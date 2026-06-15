@@ -1,6 +1,7 @@
 const express = require('express');
 const Settings = require('../models/Settings');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { validateBody } = require('../middleware/validate');
 
 const router = express.Router();
 
@@ -20,7 +21,9 @@ router.get('/', async (req, res) => {
 });
 
 // Update settings (Admin only)
-router.patch('/', requireAuth, requireRole(['admin']), async (req, res) => {
+router.patch('/', requireAuth, requireRole(['admin']), validateBody({
+    freeDelivery: { type: 'boolean' }
+}), async (req, res) => {
     try {
         const { freeDelivery } = req.body;
 

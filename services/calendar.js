@@ -13,7 +13,7 @@ const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 
 const oAuth2Client = new google.auth.OAuth2(
     CLIENT_ID,
-    CLIENT_SECCRET,
+    CLIENT_SECRET,
     REDIRECT_URI
 )
 

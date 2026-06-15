@@ -1,7 +1,20 @@
 const express = require('express');
 const User = require('../models/User');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requireAdmin, requireSelfOrAdmin } = require('../middleware/auth');
 const router = express.Router();
+
+// Fields a normal user is allowed to modify on their own profile
+const USER_EDITABLE_FIELDS = ['name', 'photoURL', 'phoneNumber', 'address'];
+// Fields an admin may additionally modify
+const ADMIN_EDITABLE_FIELDS = [...USER_EDITABLE_FIELDS, 'role', 'isVerified'];
+
+const pick = (obj, fields) => {
+  const out = {};
+  for (const f of fields) {
+    if (obj[f] !== undefined) out[f] = obj[f];
+  }
+  return out;
+};
 
 // Get all users (admin only)
 router.get('/', requireAuth, requireAdmin, async (req, res) => {
@@ -22,16 +35,11 @@ router.get('/role', requireAuth, async (req, res) => {
     }
 
     const requesterEmail = req.user?.email;
-    if (!requesterEmail) {
-      return res.status(403).json({ message: 'Forbidden' });
-    }
+    const isAdmin = req.user?.typ === 'admin' || req.user?.admin === true;
 
     // Only allow querying your own role unless requester is admin
-    if (requesterEmail !== email) {
-      const requester = await User.findOne({ email: requesterEmail }).select('role');
-      if (!requester || requester.role !== 'admin') {
-        return res.status(403).json({ message: 'Forbidden' });
-      }
+    if (!isAdmin && requesterEmail !== email) {
+      return res.status(403).json({ message: 'Forbidden' });
     }
 
     const user = await User.findOne({ email }).select('role email');
@@ -45,10 +53,10 @@ router.get('/role', requireAuth, async (req, res) => {
   }
 });
 
-// Get user by email
-router.get('/:email', async (req, res) => {
+// Get user by email (self or admin only)
+router.get('/:email', requireAuth, requireSelfOrAdmin((req) => req.params.email), async (req, res) => {
   try {
-    const user = await User.findOne({ email: req.params.email });
+    const user = await User.findOne({ email: req.params.email }).select('-__v');
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.json(user);
   } catch (err) {
@@ -56,16 +64,27 @@ router.get('/:email', async (req, res) => {
   }
 });
 
-// Create user
-router.post('/', async (req, res) => {
-  const user = new User({
-    email: req.body.email,
-    name: req.body.name,
-    photoURL: req.body.photoURL || null,
-    role: 'user' // Always set to 'user' - no role selection during signup
-  });
+// Create user (called right after Firebase signup; role is always forced to 'user')
+router.post('/', requireAuth, async (req, res) => {
+  // The email must match the authenticated Firebase user to prevent spoofing
+  const authEmail = (req.user?.email || '').toLowerCase();
+  const bodyEmail = (req.body.email || '').toLowerCase();
+  if (!authEmail || authEmail !== bodyEmail) {
+    return res.status(403).json({ message: 'Email does not match authenticated user' });
+  }
 
   try {
+    const existing = await User.findOne({ email: bodyEmail });
+    if (existing) {
+      return res.status(200).json(existing);
+    }
+
+    const user = new User({
+      email: bodyEmail,
+      name: req.body.name,
+      photoURL: req.body.photoURL || null,
+      role: 'user' // Always 'user' — no role selection during signup
+    });
     const savedUser = await user.save();
     res.status(201).json(savedUser);
   } catch (err) {
@@ -73,13 +92,21 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update user
-router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
+// Update own profile (self or admin); only whitelisted fields
+router.patch('/:id', requireAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    Object.assign(user, req.body);
+    const isAdmin = req.user?.typ === 'admin' || req.user?.admin === true;
+    const isOwner = (req.user?.email || '').toLowerCase() === (user.email || '').toLowerCase();
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const updates = pick(req.body, isAdmin ? ADMIN_EDITABLE_FIELDS : USER_EDITABLE_FIELDS);
+    Object.assign(user, updates);
     user.updatedAt = Date.now();
     const updatedUser = await user.save();
     res.json(updatedUser);
@@ -88,7 +115,7 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-// Delete user
+// Delete user (admin only)
 router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const user = await User.findByIdAndDelete(req.params.id);

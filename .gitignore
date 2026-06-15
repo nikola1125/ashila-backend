@@ -74,3 +74,4 @@ coverage/
 .env.old
 
 firebase-key.txt
+.aider*

@@ -5,22 +5,17 @@ const jwt = require('jsonwebtoken');
 const tryVerifyAdminJwt = (token) => {
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
-    console.log('[Auth Debug] JWT_SECRET not found');
+    console.error('[Auth] JWT_SECRET not configured');
     return null;
   }
 
   try {
-    console.log('[Auth Debug] Attempting to verify admin JWT...');
     const decoded = jwt.verify(token, jwtSecret, { issuer: 'medi-mart' });
-    console.log('[Auth Debug] JWT decoded successfully:', decoded);
     if (decoded?.typ !== 'admin') {
-      console.log('[Auth Debug] JWT is not admin type, typ:', decoded?.typ);
       return null;
     }
-    console.log('[Auth Debug] Admin JWT verified successfully');
     return decoded;
   } catch (err) {
-    console.log('[Auth Debug] Admin JWT verification failed:', err.message);
     return null;
   }
 };
@@ -35,53 +30,33 @@ const requireAuth = async (req, res, next) => {
     }
 
     // 1) Try admin JWT (username/password login)
-    console.log('[Auth URL]', req.originalUrl); // Debug: Print which URL is being accessed
-    console.log('[Auth Token]', token.substring(0, 20) + '...'); // Debug: Print first 20 chars of token
-    
-    // Debug: Try to decode without verification to see the payload
-    try {
-      const decodedWithoutVerification = jwt.decode(token);
-      console.log('[Auth Debug] Token payload (no verification):', decodedWithoutVerification);
-    } catch (err) {
-      console.log('[Auth Debug] Failed to decode token payload:', err.message);
-    }
-
     const adminDecoded = tryVerifyAdminJwt(token);
     if (adminDecoded) {
-      console.log('[Auth Success] Admin JWT verified. User:', adminDecoded);
-      // FIX: Spread adminDecoded to ensure 'email' and other payload fields are passed to req.user
       req.user = { ...adminDecoded, admin: true };
       return next();
-    } else {
-      console.log('[Auth Info] Admin JWT verification failed or not an admin token. Falling back to Firebase.');
     }
 
     // 2) Fallback to Firebase ID token (normal users)
     if (!firebaseAdmin) {
-      console.log('[Auth Error] Firebase Admin not configured.');
+      console.error('[Auth] Firebase Admin not configured.');
       return res.status(500).json({ message: 'Auth is not configured on server' });
     }
 
     const decoded = await firebaseAdmin.auth().verifyIdToken(token);
-    console.log('[Auth Success] Firebase Token verified. User Email:', decoded.email);
     req.user = decoded;
     return next();
   } catch (err) {
-    console.error('[Auth Failed] Token verification error:', err.message);
     return res.status(401).json({ message: 'Unauthorized' });
   }
 };
 
 const requireAdmin = async (req, res, next) => {
   try {
-    // Strict separation: Only allow users effectively logged in via Admin Credentials
+    // Strict separation: only allow users logged in via Admin Credentials
     // (verified by the presence of 'typ: "admin"' in the JWT)
     if (req.user?.typ === 'admin') {
-      console.log('[Auth Debug] Admin Access GRANTED (Credential Auth).');
       return next();
     }
-
-    console.log('[Auth Debug] Admin Access DENIED (Invalid Token Type).');
     return res.status(403).json({ message: 'Forbidden: Admin Credentials Required' });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to authorize user' });
@@ -113,4 +88,20 @@ const requireRole = (allowedRoles = []) => {
   };
 };
 
-module.exports = { requireAuth, requireAdmin, requireRole };
+// Ensures the authenticated requester is either an admin or the owner of `email`.
+// `getEmail` extracts the target email from the request (params/query/body).
+const requireSelfOrAdmin = (getEmail) => {
+  return (req, res, next) => {
+    if (req.user?.typ === 'admin' || req.user?.admin === true) {
+      return next();
+    }
+    const targetEmail = (getEmail(req) || '').toLowerCase();
+    const requesterEmail = (req.user?.email || '').toLowerCase();
+    if (targetEmail && requesterEmail && targetEmail === requesterEmail) {
+      return next();
+    }
+    return res.status(403).json({ message: 'Forbidden' });
+  };
+};
+
+module.exports = { requireAuth, requireAdmin, requireRole, requireSelfOrAdmin };

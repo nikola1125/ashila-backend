@@ -13,13 +13,13 @@ const normalizePrivateKey = (value) => {
   }
   // Replace double escaped newlines or literal \n strings with real newlines
   v = v.replace(/\\n/g, '\n');
-  
-  // Ensure the key starts and ends with the correct headers if they were lost
-  if (!v.includes('---BEGIN PRIVATE KEY---')) {
-     // If it's just the raw key, wrapped it
+
+  // Ensure the key has the correct PEM headers if they were lost
+  if (!v.includes('BEGIN PRIVATE KEY')) {
+     // If it's just the raw base64 body, wrap it with proper PEM headers
      v = `-----BEGIN PRIVATE KEY-----\n${v}\n-----END PRIVATE KEY-----`;
   }
-  
+
   return v;
 };
 

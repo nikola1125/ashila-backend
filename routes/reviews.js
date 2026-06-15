@@ -1,9 +1,21 @@
 const express = require('express');
 const Review = require('../models/Review');
 const Product = require('../models/Product');
+const { requireAuth } = require('../middleware/auth');
 const router = express.Router();
 
-// Get reviews for product
+const recalcProductRating = async (productId) => {
+  const reviews = await Review.find({ productId });
+  const avgRating = reviews.length
+    ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
+    : 0;
+  await Product.findByIdAndUpdate(productId, {
+    rating: avgRating,
+    reviewCount: reviews.length
+  });
+};
+
+// Get reviews for product (public)
 router.get('/product/:productId', async (req, res) => {
   try {
     const reviews = await Review.find({ productId: req.params.productId });
@@ -13,39 +25,46 @@ router.get('/product/:productId', async (req, res) => {
   }
 });
 
-// Create review
-router.post('/', async (req, res) => {
-  const review = new Review({
-    productId: req.body.productId,
-    userId: req.body.userId,
-    userName: req.body.userName,
-    userEmail: req.body.userEmail,
-    rating: req.body.rating,
-    reviewText: req.body.reviewText
-  });
-
+// Create review (authenticated; identity comes from the token, not the body)
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const savedReview = await review.save();
+    const rating = Number(req.body.rating);
+    if (!req.body.productId || !(rating >= 1 && rating <= 5)) {
+      return res.status(400).json({ message: 'A valid productId and rating (1-5) are required' });
+    }
 
-    // Update product rating
-    const reviews = await Review.find({ productId: req.body.productId });
-    const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
-    await Product.findByIdAndUpdate(req.body.productId, {
-      rating: avgRating,
-      reviewCount: reviews.length
+    const review = new Review({
+      productId: req.body.productId,
+      userId: req.user?.uid || req.user?.email,
+      userName: req.user?.name || req.body.userName,
+      userEmail: req.user?.email,
+      rating,
+      reviewText: req.body.reviewText
     });
 
+    const savedReview = await review.save();
+    await recalcProductRating(req.body.productId);
     res.status(201).json(savedReview);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
 });
 
-// Delete review
-router.delete('/:id', async (req, res) => {
+// Delete review (admin or the review's author)
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    const review = await Review.findByIdAndDelete(req.params.id);
+    const review = await Review.findById(req.params.id);
     if (!review) return res.status(404).json({ message: 'Review not found' });
+
+    const isAdmin = req.user?.typ === 'admin' || req.user?.admin === true;
+    const isOwner = (req.user?.email || '').toLowerCase() === (review.userEmail || '').toLowerCase();
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const productId = review.productId;
+    await review.deleteOne();
+    await recalcProductRating(productId);
     res.json({ message: 'Review deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });

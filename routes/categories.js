@@ -1,6 +1,7 @@
 const express = require('express');
 const Category = require('../models/Category');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { validateBody } = require('../middleware/validate');
 const router = express.Router();
 
 // Get all categories
@@ -25,7 +26,11 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create category (admin only)
-router.post('/', requireAuth, requireRole(['admin']), async (req, res) => {
+router.post('/', requireAuth, requireRole(['admin']), validateBody({
+  categoryName: { type: 'string', required: true, min: 1, max: 200 },
+  categoryImage: { type: 'string' },
+  description: { type: 'string', max: 2000 }
+}), async (req, res) => {
   const category = new Category({
     categoryName: req.body.categoryName,
     categoryImage: req.body.categoryImage,
@@ -46,7 +51,10 @@ router.patch('/:id', requireAuth, requireRole(['admin']), async (req, res) => {
     const category = await Category.findById(req.params.id);
     if (!category) return res.status(404).json({ message: 'Category not found' });
 
-    Object.assign(category, req.body);
+    const allowed = ['categoryName', 'categoryImage', 'description'];
+    for (const f of allowed) {
+      if (req.body[f] !== undefined) category[f] = req.body[f];
+    }
     category.updatedAt = Date.now();
     const updatedCategory = await category.save();
     res.json(updatedCategory);

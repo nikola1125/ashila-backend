@@ -1,8 +1,18 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 
 const router = express.Router();
+
+// Throttle login attempts to slow down brute-force attacks
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many login attempts, please try again later.' }
+});
 
 const safeEqual = (a, b) => {
   const aBuf = Buffer.from(String(a || ''), 'utf8');
@@ -11,7 +21,7 @@ const safeEqual = (a, b) => {
   return crypto.timingSafeEqual(aBuf, bBuf);
 };
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { username, password, rememberMe } = req.body || {};
 
