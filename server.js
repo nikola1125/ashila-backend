@@ -93,8 +93,21 @@ app.use('/reviews', require('./routes/reviews'));
 app.use('/admin', require('./routes/adminAuth'));
 app.use('/settings', require('./routes/settings'));
 app.use('/seo', require('./routes/seo'));
-app.use('/sitemap.xml', require('./routes/seo'));
 app.use('/push', require('./routes/push'));
+
+// Serve dynamic sitemap directly at /sitemap.xml
+app.get('/sitemap.xml', async (req, res) => {
+  try {
+    const sitemapService = require('./services/SitemapService');
+    const sitemap = await sitemapService.generateSitemap();
+    res.set('Content-Type', 'application/xml');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(sitemap);
+  } catch (error) {
+    logger.error('Sitemap generation error', error.message);
+    res.status(500).send('Error generating sitemap');
+  }
+});
 
 // Health check
 app.get('/health', (req, res) => {
