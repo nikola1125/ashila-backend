@@ -2,10 +2,11 @@ services:
   - type: web
     name: ashila-backend
     env: node
-    nodeVersion: 22.22.2
     buildCommand: npm install
     startCommand: npm start
     envVars:
+      - key: NODE_VERSION
+        value: 22.22.2
       - key: NODE_ENV
         value: production
       - key: PORT
