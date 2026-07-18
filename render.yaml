@@ -1,14 +1,80 @@
 services:
   - type: web
-    name: medi-mart-backend
+    name: ashila-backend
     env: node
-    nodeVersion: 18.20.0
+    nodeVersion: 22.22.2
     buildCommand: npm install
     startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
-      - key: MONGODB_URI
-        sync: false
       - key: PORT
         value: 10000
+      - key: FRONTEND_URL
+        value: https://www.farmaciashila.com
+
+      # MongoDB
+      - key: MONGODB_URI
+        sync: false
+
+      # Mailjet
+      - key: MAILJET_API_KEY
+        sync: false
+      - key: MAILJET_SECRET_KEY
+        sync: false
+      - key: MAILJET_SENDER_EMAIL
+        value: orders@farmaciashila.com
+
+      # Gmail SMTP
+      - key: EMAIL_USER
+        value: farmaciashila11@gmail.com
+      - key: EMAIL_PASSWORD
+        sync: false
+
+      # Supabase
+      - key: SUPABASE_URL
+        value: https://msfwwzvuuaegafqaibrc.supabase.co
+      - key: SUPABASE_API_KEY
+        sync: false
+
+      # Firebase Admin
+      - key: FIREBASE_PROJECT_ID
+        value: pharma-7ef8b
+      - key: FIREBASE_CLIENT_EMAIL
+        value: firebase-adminsdk-fbsvc@pharma-7ef8b.iam.gserviceaccount.com
+      - key: FIREBASE_PRIVATE_KEY_BASE64
+        sync: false
+
+      # Cloudflare R2
+      - key: R2_BUCKET_NAME
+        value: ashila
+      - key: R2_ACCOUNT_ID
+        value: b1e4f2c3b0c7c6ed0179625570283b6d
+      - key: R2_PUBLIC_URL
+        value: https://pub-941c92393c94405fac8eaf6ab005b82d.r2.dev
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+
+      # Auth
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+
+      # Web Push (VAPID)
+      - key: VAPID_EMAIL
+        value: admin@farmaciashila.com
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+
+      # OneSignal
+      - key: ONESIGNAL_APP_ID
+        value: af59ec75-bbc4-46a3-b342-040ad2819695
+      - key: ONESIGNAL_REST_API_KEY
+        sync: false
